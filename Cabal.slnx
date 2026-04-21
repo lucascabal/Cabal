@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Cabal.Scheduler/Cabal.Scheduler.csproj" />
+    <Project Path="src/Cabal.SQLite/Cabal.SQLite.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Cabal.Tests/Cabal.Tests.csproj" />
+  </Folder>
+</Solution>

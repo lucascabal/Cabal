@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>true</IsPackable>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild> <PackageId>Cabal.Scheduler</PackageId>
+    <Version>1.0.0-beta</Version>
+    <Authors>TuNombre</Authors>
+    <Company>TuEmpresa</Company>
+    <Description>Un motor de tareas en segundo plano ultraligero y zero-dependency para .NET 8 con dashboard integrado.</Description>
+    <Tags>scheduler;cron;background-jobs;tasks;hosted-service;cabal</Tags>
+    
+    <RepositoryUrl>https://gitlab.com/tu-usuario/cabal</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Web\UI\dashboard.html" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\"/>
+  </ItemGroup>
+
+</Project>
