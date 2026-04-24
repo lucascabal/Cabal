@@ -1,15 +1,14 @@
-using System;
-using System.Collections.Generic;
-using Cabal.Scheduler.Core;
-
 namespace Cabal.Scheduler.Storage;
 
+using Cabal.Scheduler.Core;
+  
 public interface IJobStorage
 {
-    void InitializeDatabase();
-    void SyncJobsFromMemory(IEnumerable<JobDefinition> jobs);
-    string? GetAndLockNextJob(DateTime now);
-    JobDefinitionRecord? GetJobById(string id);
-    void MarkJobAsCompleted(string jobId, int intervalSeconds, bool success, string? errorMessage);
-    DashboardStats GetDashboardStats();
+    Task InitializeDatabaseAsync();
+    Task SyncJobsFromMemoryAsync(IEnumerable<JobDefinition> jobs);
+    Task<string?> GetAndLockNextJobAsync(DateTime now);
+    Task<JobDefinitionRecord?> GetJobByIdAsync(string id);
+    Task MarkJobAsCompletedAsync(string jobId, int intervalSeconds, bool success, string? errorMessage);
+    Task<DashboardStats> GetDashboardStatsAsync();
 }
+ 

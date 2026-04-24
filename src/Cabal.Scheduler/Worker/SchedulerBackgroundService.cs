@@ -1,8 +1,4 @@
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -17,12 +13,12 @@ public class SchedulerBackgroundService : BackgroundService
     private readonly IJobStorage _storage;
     private readonly ILogger<SchedulerBackgroundService> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
-    
+
     private readonly Dictionary<string, JobDefinition> _jobDelegates = [];
 
     public SchedulerBackgroundService(
-        IJobStorage storage, 
-        ILogger<SchedulerBackgroundService> logger, 
+        IJobStorage storage,
+        ILogger<SchedulerBackgroundService> logger,
         IServiceScopeFactory scopeFactory)
     {
         _storage = storage;
@@ -34,7 +30,7 @@ public class SchedulerBackgroundService : BackgroundService
     {
         _logger.LogInformation("Cabal Scheduler: Starting engine...");
 
-        _storage.InitializeDatabase();
+        await _storage.InitializeDatabaseAsync();
 
         var registeredJobs = Schedule.ConsumeJobs();
         foreach (var job in registeredJobs)
@@ -42,19 +38,19 @@ public class SchedulerBackgroundService : BackgroundService
             _jobDelegates[job.Name] = job;
         }
 
-        _storage.SyncJobsFromMemory(registeredJobs);
+        await _storage.SyncJobsFromMemoryAsync(registeredJobs);
 
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
 
         while (!stoppingToken.IsCancellationRequested)
         {
             await ProcessNextJobAsync(stoppingToken);
-            
-            try 
+
+            try
             {
                 await timer.WaitForNextTickAsync(stoppingToken);
             }
-            catch (OperationCanceledException) 
+            catch (OperationCanceledException)
             {
                 break;
             }
@@ -63,13 +59,13 @@ public class SchedulerBackgroundService : BackgroundService
 
     private async Task ProcessNextJobAsync(CancellationToken stoppingToken)
     {
-        var jobId = _storage.GetAndLockNextJob(DateTime.UtcNow);
+        var jobId = await _storage.GetAndLockNextJobAsync(DateTime.UtcNow);
         if (jobId == null) return;
 
-        var jobRecord = _storage.GetJobById(jobId);
+        var jobRecord = await _storage.GetJobByIdAsync(jobId);
         if (jobRecord == null || !_jobDelegates.TryGetValue(jobRecord.Name, out var definition))
         {
-            _logger.LogWarning($"Cabal: Job: {jobId} found, but execution code was not found in database");
+            _logger.LogWarning("Cabal: Job {JobId} found in storage but has no registered action.", jobId);
             return;
         }
 
@@ -94,7 +90,8 @@ public class SchedulerBackgroundService : BackgroundService
             catch (Exception ex)
             {
                 errorMessage = ex.Message;
-                _logger.LogWarning($"Cabal: Fail on [{definition.Name}] (Retry {currentAttempt}/{maxAttempts}). {ex.Message}");
+                _logger.LogWarning("Cabal: [{JobName}] failed (attempt {Attempt}/{Max}). {Error}",
+                    definition.Name, currentAttempt, maxAttempts, ex.Message);
 
                 if (currentAttempt < maxAttempts && !stoppingToken.IsCancellationRequested)
                 {
@@ -108,13 +105,13 @@ public class SchedulerBackgroundService : BackgroundService
 
         if (!success)
         {
-            _logger.LogError($"Cabal: Task [{definition.Name}] finished failing after {maxAttempts} attempts.");
+            _logger.LogError("Cabal: [{JobName}] failed after {Max} attempts.", definition.Name, maxAttempts);
         }
         else
         {
-            _logger.LogInformation($"Cabal: Task [{definition.Name}] completed at {stopwatch.ElapsedMilliseconds}ms.");
+            _logger.LogInformation("Cabal: [{JobName}] completed in {Ms}ms.", definition.Name, stopwatch.ElapsedMilliseconds);
         }
 
-        _storage.MarkJobAsCompleted(jobId, (int)definition.Interval.TotalSeconds, success, errorMessage);
+        await _storage.MarkJobAsCompletedAsync(jobId, (int)definition.Interval.TotalSeconds, success, errorMessage);
     }
 }

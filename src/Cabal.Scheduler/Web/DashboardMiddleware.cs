@@ -59,7 +59,7 @@ internal class DashboardMiddleware
     {
         context.Response.ContentType = "application/json";
         
-        var stats = storage.GetDashboardStats(); 
+        var stats = await storage.GetDashboardStatsAsync(); 
 
         await context.Response.WriteAsync(JsonSerializer.Serialize(stats));
     }

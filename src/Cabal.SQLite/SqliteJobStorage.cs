@@ -13,14 +13,14 @@ public class SqliteJobStorage : IJobStorage
         _connectionString = connectionString;
     }
 
-    public void InitializeDatabase()
+    public async Task InitializeDatabaseAsync()
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
-        using var command = connection.CreateCommand();
-        
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+
         command.CommandText = "PRAGMA journal_mode=WAL;";
-        command.ExecuteNonQuery();
+        await command.ExecuteNonQueryAsync();
 
         command.CommandText = @"
             CREATE TABLE IF NOT EXISTS ScheduledJobs (
@@ -31,7 +31,7 @@ public class SqliteJobStorage : IJobStorage
                 NextExecution TEXT NOT NULL,
                 LockedUntil TEXT NULL
             );
-            
+
             CREATE TABLE IF NOT EXISTS JobHistory (
                 Id INTEGER PRIMARY KEY AUTOINCREMENT,
                 JobId TEXT NOT NULL,
@@ -41,18 +41,18 @@ public class SqliteJobStorage : IJobStorage
                 ErrorMessage TEXT NULL
             );
         ";
-        command.ExecuteNonQuery();
+        await command.ExecuteNonQueryAsync();
     }
 
-    public void SyncJobsFromMemory(IEnumerable<JobDefinition> jobs)
+    public async Task SyncJobsFromMemoryAsync(IEnumerable<JobDefinition> jobs)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
-        using var transaction = connection.BeginTransaction();
-        
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+
         foreach (var job in jobs)
         {
-            using var command = connection.CreateCommand();
+            await using var command = connection.CreateCommand();
             command.CommandText = @"
                 INSERT OR IGNORE INTO ScheduledJobs (Id, Name, IntervalSeconds, NextExecution)
                 VALUES (@id, @name, @interval, @nextExecution);
@@ -61,62 +61,63 @@ public class SqliteJobStorage : IJobStorage
             command.Parameters.AddWithValue("@name", job.Name);
             command.Parameters.AddWithValue("@interval", job.Interval.TotalSeconds);
             command.Parameters.AddWithValue("@nextExecution", DateTime.UtcNow.Add(job.Interval).ToString("O"));
-            command.ExecuteNonQuery();
+            await command.ExecuteNonQueryAsync();
         }
-        transaction.Commit();
+
+        await transaction.CommitAsync();
     }
 
-    public string? GetAndLockNextJob(DateTime now)
+    public async Task<string?> GetAndLockNextJobAsync(DateTime now)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
-        using var command = connection.CreateCommand();
-        
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+
         command.CommandText = @"
-            UPDATE ScheduledJobs 
-            SET LockedUntil = @lockedUntil 
+            UPDATE ScheduledJobs
+            SET LockedUntil = @lockedUntil
             WHERE Id = (
-                SELECT Id FROM ScheduledJobs 
-                WHERE NextExecution <= @now 
+                SELECT Id FROM ScheduledJobs
+                WHERE NextExecution <= @now
                   AND (LockedUntil IS NULL OR LockedUntil < @now)
                 LIMIT 1
             )
             RETURNING Id;
         ";
-        
-        command.Parameters.AddWithValue("@now", now.ToString("O"));
-        command.Parameters.AddWithValue("@lockedUntil", now.AddMinutes(5).ToString("O")); // Lock de seguridad
 
-        var result = command.ExecuteScalar();
+        command.Parameters.AddWithValue("@now", now.ToString("O"));
+        command.Parameters.AddWithValue("@lockedUntil", now.AddMinutes(5).ToString("O"));
+
+        var result = await command.ExecuteScalarAsync();
         return result?.ToString();
     }
 
-    public JobDefinitionRecord? GetJobById(string id)
+    public async Task<JobDefinitionRecord?> GetJobByIdAsync(string id)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
-        using var command = connection.CreateCommand();
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
         command.CommandText = "SELECT Id, Name FROM ScheduledJobs WHERE Id = @id LIMIT 1;";
         command.Parameters.AddWithValue("@id", id);
-        
-        using var reader = command.ExecuteReader();
-        if (reader.Read())
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
         {
             return new JobDefinitionRecord(reader.GetString(0), reader.GetString(1));
         }
         return null;
     }
 
-    public void MarkJobAsCompleted(string jobId, int intervalSeconds, bool success, string? errorMessage)
+    public async Task MarkJobAsCompletedAsync(string jobId, int intervalSeconds, bool success, string? errorMessage)
     {
         var now = DateTime.UtcNow;
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
-        using var command = connection.CreateCommand();
-        
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+
         command.CommandText = @"
-            UPDATE ScheduledJobs 
-            SET LastExecution = @now, NextExecution = @next, LockedUntil = NULL 
+            UPDATE ScheduledJobs
+            SET LastExecution = @now, NextExecution = @next, LockedUntil = NULL
             WHERE Id = @id;
 
             INSERT INTO JobHistory (JobId, JobName, ExecutedAt, Status, ErrorMessage)
@@ -129,31 +130,31 @@ public class SqliteJobStorage : IJobStorage
         command.Parameters.AddWithValue("@next", now.AddSeconds(intervalSeconds).ToString("O"));
         command.Parameters.AddWithValue("@status", success ? "Success" : "Error");
         command.Parameters.AddWithValue("@error", errorMessage ?? (object)DBNull.Value);
-        command.ExecuteNonQuery();
+        await command.ExecuteNonQueryAsync();
     }
 
-    public DashboardStats GetDashboardStats()
+    public async Task<DashboardStats> GetDashboardStatsAsync()
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
 
-        using var cmdActive = connection.CreateCommand();
+        await using var cmdActive = connection.CreateCommand();
         cmdActive.CommandText = "SELECT COUNT(*) FROM ScheduledJobs;";
-        var activeJobs = Convert.ToInt32(cmdActive.ExecuteScalar());
+        var activeJobs = Convert.ToInt32(await cmdActive.ExecuteScalarAsync());
 
-        using var cmdTotal = connection.CreateCommand();
+        await using var cmdTotal = connection.CreateCommand();
         cmdTotal.CommandText = "SELECT COUNT(*) FROM JobHistory;";
-        var totalExecutions = Convert.ToInt32(cmdTotal.ExecuteScalar());
+        var totalExecutions = Convert.ToInt32(await cmdTotal.ExecuteScalarAsync());
 
-        using var cmdFailed = connection.CreateCommand();
+        await using var cmdFailed = connection.CreateCommand();
         cmdFailed.CommandText = "SELECT COUNT(*) FROM JobHistory WHERE Status = 'Error';";
-        var failedExecutions = Convert.ToInt32(cmdFailed.ExecuteScalar());
+        var failedExecutions = Convert.ToInt32(await cmdFailed.ExecuteScalarAsync());
 
         var jobs = new List<JobInfo>();
-        using var cmdJobs = connection.CreateCommand();
+        await using var cmdJobs = connection.CreateCommand();
         cmdJobs.CommandText = "SELECT Name, IntervalSeconds, NextExecution, LockedUntil FROM ScheduledJobs ORDER BY Name;";
-        using var readerJobs = cmdJobs.ExecuteReader();
-        while (readerJobs.Read())
+        await using var readerJobs = await cmdJobs.ExecuteReaderAsync();
+        while (await readerJobs.ReadAsync())
         {
             jobs.Add(new JobInfo(
                 Name: readerJobs.GetString(0),
@@ -164,10 +165,10 @@ public class SqliteJobStorage : IJobStorage
         }
 
         var history = new List<JobHistoryLog>();
-        using var cmdHistory = connection.CreateCommand();
+        await using var cmdHistory = connection.CreateCommand();
         cmdHistory.CommandText = "SELECT JobName, ExecutedAt, Status, ErrorMessage FROM JobHistory ORDER BY Id DESC LIMIT 10;";
-        using var readerHistory = cmdHistory.ExecuteReader();
-        while (readerHistory.Read())
+        await using var readerHistory = await cmdHistory.ExecuteReaderAsync();
+        while (await readerHistory.ReadAsync())
         {
             history.Add(new JobHistoryLog(
                 JobName: readerHistory.GetString(0),
@@ -178,7 +179,7 @@ public class SqliteJobStorage : IJobStorage
         }
 
         var performanceGraph = new List<GraphPoint>();
-        using var cmdGraph = connection.CreateCommand();
+        await using var cmdGraph = connection.CreateCommand();
         cmdGraph.CommandText = @"
             SELECT
                 (CAST(strftime('%s', ExecutedAt) AS INTEGER) / 60) * 60 AS Timestamp,
@@ -188,9 +189,9 @@ public class SqliteJobStorage : IJobStorage
               AND ExecutedAt >= datetime('now', '-1 hour')
             GROUP BY Timestamp
             ORDER BY Timestamp ASC;";
-            
-        using var readerGraph = cmdGraph.ExecuteReader();
-        while (readerGraph.Read())
+
+        await using var readerGraph = await cmdGraph.ExecuteReaderAsync();
+        while (await readerGraph.ReadAsync())
         {
             if (!readerGraph.IsDBNull(0))
             {
@@ -202,7 +203,7 @@ public class SqliteJobStorage : IJobStorage
         }
 
         return new DashboardStats(
-            ActiveJobs: activeJobs, 
+            ActiveJobs: activeJobs,
             Uptime: "Online",
             TotalExecutions: totalExecutions,
             FailedExecutions: failedExecutions,

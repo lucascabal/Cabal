@@ -1,8 +1,5 @@
-using System;
-using System.Linq;
 using Cabal.Scheduler.Builder;
 using FluentAssertions;
-using Xunit;
 
 namespace Cabal.Tests;
 
