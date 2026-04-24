@@ -8,14 +8,14 @@ namespace Cabal.Scheduler.Builder;
 public class JobBuilder
 {
     private readonly TimeSpan _interval;
-    private string _jobName = "Anonymus job";
+    private string _jobName = "Anonymous Job";
     private int _maxRetries = 0;
 
     internal JobBuilder(TimeSpan interval) => _interval = interval;
 
     public JobBuilder WithName(string name)
     {
-        _jobName = string.IsNullOrWhiteSpace(name) ? "Anonymus job" : name;
+        _jobName = string.IsNullOrWhiteSpace(name) ? "Anonymous Job" : name;
         return this;
     }
 

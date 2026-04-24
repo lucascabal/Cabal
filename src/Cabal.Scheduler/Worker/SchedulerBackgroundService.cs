@@ -108,7 +108,7 @@ public class SchedulerBackgroundService : BackgroundService
 
         if (!success)
         {
-            _logger.LogError($"Cabal: Task [{definition.Name}] finished failing after {maxAttempts} attemps.");
+            _logger.LogError($"Cabal: Task [{definition.Name}] finished failing after {maxAttempts} attempts.");
         }
         else
         {
