@@ -19,6 +19,7 @@ Hangfire and Quartz are great tools, but they come with real setup costs — inf
 
 ## Installation
 
+(soon 😉)
 ```
 dotnet add package Cabal.Scheduler
 dotnet add package Cabal.SQLite
