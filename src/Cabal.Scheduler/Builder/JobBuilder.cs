@@ -1,0 +1,53 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Cabal.Scheduler.Core;
+
+namespace Cabal.Scheduler.Builder;
+
+public class JobBuilder
+{
+    private readonly TimeSpan _interval;
+    private string _jobName = "Anonymus job";
+    private int _maxRetries = 0;
+
+    internal JobBuilder(TimeSpan interval) => _interval = interval;
+
+    public JobBuilder WithName(string name)
+    {
+        _jobName = string.IsNullOrWhiteSpace(name) ? "Anonymus job" : name;
+        return this;
+    }
+
+    public JobBuilder WithRetries(int maxRetries)
+    {
+        _maxRetries = maxRetries < 0 ? 0 : maxRetries;
+        return this;
+    }
+
+    public void Do(Func<IServiceProvider, CancellationToken, Task> action)
+    {
+        if (action == null) throw new ArgumentNullException(nameof(action));
+
+        var definition = new JobDefinition
+        {
+            Name = _jobName,
+            Interval = _interval,
+            MaxRetries = _maxRetries,
+            ActionToExecute = action
+        };
+
+        Schedule.PendingJobs.Add(definition);
+    }
+
+    public void Do(Action action)
+    {
+        if (action == null) throw new ArgumentNullException(nameof(action));
+
+        Do((_, _) => 
+        {
+            action();
+            return Task.CompletedTask;
+        });
+    }
+}

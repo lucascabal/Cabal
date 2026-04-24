@@ -1,0 +1,120 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Cabal.Scheduler.Builder;
+using Cabal.Scheduler.Core;
+using Cabal.Scheduler.Storage;
+
+namespace Cabal.Scheduler.Worker;
+
+public class SchedulerBackgroundService : BackgroundService
+{
+    private readonly IJobStorage _storage;
+    private readonly ILogger<SchedulerBackgroundService> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
+    
+    private readonly Dictionary<string, JobDefinition> _jobDelegates = [];
+
+    public SchedulerBackgroundService(
+        IJobStorage storage, 
+        ILogger<SchedulerBackgroundService> logger, 
+        IServiceScopeFactory scopeFactory)
+    {
+        _storage = storage;
+        _logger = logger;
+        _scopeFactory = scopeFactory;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("Cabal Scheduler: Starting engine...");
+
+        _storage.InitializeDatabase();
+
+        var registeredJobs = Schedule.ConsumeJobs();
+        foreach (var job in registeredJobs)
+        {
+            _jobDelegates[job.Name] = job;
+        }
+
+        _storage.SyncJobsFromMemory(registeredJobs);
+
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            await ProcessNextJobAsync(stoppingToken);
+            
+            try 
+            {
+                await timer.WaitForNextTickAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) 
+            {
+                break;
+            }
+        }
+    }
+
+    private async Task ProcessNextJobAsync(CancellationToken stoppingToken)
+    {
+        var jobId = _storage.GetAndLockNextJob(DateTime.UtcNow);
+        if (jobId == null) return;
+
+        var jobRecord = _storage.GetJobById(jobId);
+        if (jobRecord == null || !_jobDelegates.TryGetValue(jobRecord.Name, out var definition))
+        {
+            _logger.LogWarning($"Cabal: Job: {jobId} found, but execution code was not found in database");
+            return;
+        }
+
+        bool success = false;
+        string? errorMessage = null;
+        int currentAttempt = 0;
+        int maxAttempts = definition.MaxRetries + 1;
+
+        var stopwatch = Stopwatch.StartNew();
+
+        while (currentAttempt < maxAttempts && !success && !stoppingToken.IsCancellationRequested)
+        {
+            currentAttempt++;
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    await definition.ActionToExecute(scope.ServiceProvider, stoppingToken);
+                }
+                success = true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+                _logger.LogWarning($"Cabal: Fail on [{definition.Name}] (Retry {currentAttempt}/{maxAttempts}). {ex.Message}");
+
+                if (currentAttempt < maxAttempts && !stoppingToken.IsCancellationRequested)
+                {
+                    var delaySeconds = Math.Pow(2, currentAttempt);
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds), stoppingToken);
+                }
+            }
+        }
+
+        stopwatch.Stop();
+
+        if (!success)
+        {
+            _logger.LogError($"Cabal: Task [{definition.Name}] finished failing after {maxAttempts} attemps.");
+        }
+        else
+        {
+            _logger.LogInformation($"Cabal: Task [{definition.Name}] completed at {stopwatch.ElapsedMilliseconds}ms.");
+        }
+
+        _storage.MarkJobAsCompleted(jobId, (int)definition.Interval.TotalSeconds, success, errorMessage);
+    }
+}

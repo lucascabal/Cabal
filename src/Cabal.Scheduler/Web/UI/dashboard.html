@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cabal Control Center - Terminal OS</title>
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/uplot@1.6.30/dist/uPlot.min.css">
+    
+    <style>
+        :root {
+            /* Fallout Green Palette */
+            --terminal-green: #4ade80;
+            --terminal-dark: #052e16;
+            --terminal-bg: #000000;
+            --terminal-border: #14532d;
+            --terminal-glow: rgba(74, 222, 128, 0.15);
+
+            /* Shadcn Override Variables */
+            --background: var(--terminal-bg);
+            --foreground: var(--terminal-green);
+            --muted: var(--terminal-dark);
+            --muted-foreground: #22c55e;
+            --border: var(--terminal-border);
+            --card: #050505;
+            --radius: 0.25rem;
+            
+            /* Pico.css Overrides */
+            --pico-background-color: var(--background);
+            --pico-color: var(--foreground);
+            --pico-text-selection-color: var(--terminal-dark);
+            --pico-muted-color: var(--muted-foreground);
+            --pico-border-color: var(--border);
+            --pico-table-border-color: var(--border);
+            --pico-table-row-stripped-background-color: transparent;
+            --pico-table-body-divider-width: 1px;
+            --pico-primary: var(--terminal-green);
+            
+            /* Typography: Monospace for that CRT feel */
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+
+        body { 
+            padding-top: 1.5rem; 
+            text-transform: uppercase; 
+        }
+        
+        nav { 
+            margin-bottom: 2rem; 
+            border-bottom: 1px solid var(--border); 
+            padding-bottom: 1rem; 
+        }
+        
+        .cabal-brand { 
+            font-weight: 700; 
+            font-size: 1.25rem; 
+            letter-spacing: 0.1em; 
+            text-shadow: 0 0 8px var(--terminal-glow);
+        }
+        
+        /* Minimalist Shadcn Cards with Green Glow */
+        .stat-card { 
+            padding: 1.5rem; 
+            border-radius: var(--radius); 
+            background-color: var(--card); 
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 12px var(--terminal-glow);
+        }
+        .stat-card header { 
+            font-size: 0.875rem; 
+            font-weight: bold; 
+            color: var(--muted-foreground); 
+            margin-bottom: 0.5rem; 
+            border: none;
+            padding: 0;
+            letter-spacing: 0.05em;
+        }
+        .stat-value { font-size: 2.5rem; font-weight: bold; margin: 0; line-height: 1; }
+        
+        table { font-size: 0.875rem; }
+        th { font-weight: bold; color: var(--muted-foreground); letter-spacing: 0.05em; }
+        
+        .badge { 
+            padding: 0.1rem 0.5rem; 
+            border-radius: var(--radius); 
+            font-size: 0.75rem; 
+            font-weight: bold; 
+            border: 1px solid var(--terminal-green);
+        }
+        .badge-success { background: var(--terminal-dark); color: var(--terminal-green); }
+        .badge-error { background: var(--terminal-green); color: var(--terminal-bg); animation: blink 1s step-end infinite;}
+
+        @keyframes blink { 50% { opacity: 0.7; } }
+
+        .chart-container { 
+            margin-bottom: 2rem; 
+            padding: 1.5rem; 
+            border: 1px solid var(--border); 
+            border-radius: var(--radius); 
+            background-color: var(--card);
+        }
+    </style>
+</head>
+<body>
+    <main class="container-fluid" style="max-width: 1200px;" id="app">
+        <article aria-busy="true" style="margin-top: 20vh; text-align: center; background: transparent; border: none; color: var(--terminal-green);">
+            BOOTING CABAL.SCHEDULER ENGINE...
+        </article>
+    </main>
+
+    <script type="module">
+        // Direct imports from CDNs
+        import { html, render, useState, useEffect, useRef } from 'https://unpkg.com/htm/preact/standalone.module.js';
+        import uPlot from 'https://unpkg.com/uplot@1.6.30/dist/uPlot.esm.js';
+
+        const formatTime = (isoString) => {
+            if (!isoString) return "-";
+            return new Date(isoString).toLocaleTimeString('en-US', { hour12: false });
+        };
+
+        function UPlotChart({ data }) {
+            const chartRef = useRef(null);
+            const uplotInst = useRef(null);
+
+            useEffect(() => {
+                if (!chartRef.current || !data || !data.PerformanceGraph) return;
+
+                const opts = {
+                    width: chartRef.current.clientWidth,
+                    height: 200,
+                    cursor: { y: false },
+                    series: [
+                        {}, 
+                        {
+                            label: "EXEC",
+                            stroke: "#4ade80", 
+                            width: 2,
+                            fill: "rgba(74, 222, 128, 0.1)" 
+                        }
+                    ],
+                    axes: [
+                        { stroke: "#22c55e", grid: { stroke: "#14532d" } }, 
+                        { stroke: "#22c55e", grid: { stroke: "#14532d" } }  
+                    ]
+                };
+
+                const chartData = [
+                    data.PerformanceGraph.map(p => p.Timestamp),
+                    data.PerformanceGraph.map(p => p.Executions)
+                ];
+
+                if (!uplotInst.current) {
+                    uplotInst.current = new uPlot(opts, chartData, chartRef.current);
+                } else {
+                    uplotInst.current.setData(chartData);
+                }
+
+                return () => {
+                    if (uplotInst.current) {
+                        uplotInst.current.destroy();
+                        uplotInst.current = null;
+                    }
+                };
+            }, [data]);
+
+            return html`<div ref=${chartRef} style="width: 100%;"></div>`;
+        }
+
+        function Dashboard() {
+            const [stats, setStats] = useState(null);
+
+            useEffect(() => {
+                const fetchStats = () => {
+                    fetch(window.location.pathname + '/api/stats')
+                        .then(res => res.json())
+                        .then(data => setStats(data))
+                        .catch(err => console.error("SYS_ERR:", err));
+                };
+                
+                fetchStats();
+                const interval = setInterval(fetchStats, 2000);
+                return () => clearInterval(interval);
+            }, []);
+
+            if (!stats) return html`<div style="text-align: center; margin-top: 2rem;">AWAITING TELEMETRY...</div>`;
+
+            return html`
+                <nav>
+                    <ul><li><span class="cabal-brand">> CABAL.SCHEDULER_</span></li></ul>
+                    <ul><li><span>V1.0.0-BETA</span></li></ul>
+                </nav>
+                
+                <div class="grid" style="margin-bottom: 2rem;">
+                    <div class="stat-card">
+                        <header>ACTIVE DIRECTIVES</header>
+                        <p class="stat-value">${stats.ActiveJobs}</p>
+                    </div>
+                    <div class="stat-card">
+                        <header>TOTAL CYCLES</header>
+                        <p class="stat-value">${stats.TotalExecutions}</p>
+                    </div>
+                    <div class="stat-card" style="${stats.FailedExecutions > 0 ? 'border-color: #ef4444;' : ''}">
+                        <header>CRITICAL ERRORS</header>
+                        <p class="stat-value" style="${stats.FailedExecutions > 0 ? 'color: #ef4444;' : ''}">${stats.FailedExecutions}</p>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <h4 style="margin-bottom: 1rem; font-size: 1rem; font-weight: bold;">PERFORMANCE (RPM)</h4>
+                    <${UPlotChart} data=${stats} />
+                </div>
+                
+                <div class="grid">
+                    <section>
+                        <h4 style="font-size: 1rem; font-weight: bold; margin-bottom: 1rem;">STORED PROTOCOLS</h4>
+                        <table role="grid" style="margin: 0;">
+                            <thead>
+                                <tr>
+                                    <th>DESIGNATION</th>
+                                    <th>INTERVAL</th>
+                                    <th>NEXT UPLINK</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${stats.Jobs.map(job => html`
+                                    <tr>
+                                        <td><strong>${job.Name}</strong></td>
+                                        <td>${job.IntervalSeconds}S</td>
+                                        <td>${formatTime(job.NextExecution)}</td>
+                                    </tr>
+                                `)}
+                            </tbody>
+                        </table>
+                    </section>
+
+                    <section>
+                        <h4 style="font-size: 1rem; font-weight: bold; margin-bottom: 1rem;">SYS_LOG OUTPUT</h4>
+                        <table role="grid" style="margin: 0;">
+                            <thead>
+                                <tr>
+                                    <th>TIMESTAMP</th>
+                                    <th>PROTOCOL</th>
+                                    <th>STATUS</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${stats.History.map(log => html`
+                                    <tr>
+                                        <td>${formatTime(log.ExecutedAt)}</td>
+                                        <td>${log.JobName}</td>
+                                        <td>
+                                            <span class="badge ${log.Status === 'Success' ? 'badge-success' : 'badge-error'}">
+                                                ${log.Status}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                `)}
+                            </tbody>
+                        </table>
+                    </section>
+                </div>
+            `;
+        }
+
+        render(html`<${Dashboard} />`, document.getElementById('app'));
+    </script>
+</body>
+</html>
