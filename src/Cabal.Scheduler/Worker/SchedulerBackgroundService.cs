@@ -91,46 +91,62 @@ public class SchedulerBackgroundService : BackgroundService
 
             var stopwatch = Stopwatch.StartNew();
 
-            while (currentAttempt < maxAttempts && !success && !stoppingToken.IsCancellationRequested)
+            try
             {
-                currentAttempt++;
-                try
+                while (currentAttempt < maxAttempts && !success && !stoppingToken.IsCancellationRequested)
                 {
-                    using (var scope = _scopeFactory.CreateScope())
+                    currentAttempt++;
+                    try
                     {
-                        await definition.ActionToExecute(scope.ServiceProvider, stoppingToken);
+                        using (var scope = _scopeFactory.CreateScope())
+                        {
+                            await definition.ActionToExecute(scope.ServiceProvider, stoppingToken);
+                        }
+                        success = true;
                     }
-                    success = true;
+                    catch (Exception ex)
+                    {
+                        errorMessage = ex.Message;
+                        _logger.LogWarning("Cabal: [{JobName}] failed (attempt {Attempt}/{Max}). {Error}",
+                            definition.Name, currentAttempt, maxAttempts, ex.Message);
+
+                        if (currentAttempt < maxAttempts && !stoppingToken.IsCancellationRequested)
+                        {
+                            var delaySeconds = Math.Pow(2, currentAttempt);
+                            try
+                            {
+                                await Task.Delay(TimeSpan.FromSeconds(delaySeconds), stoppingToken);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                break;
+                            }
+                        }
+                    }
                 }
-                catch (Exception ex)
+            }
+            catch (Exception ex)
+            {
+                success = false;
+                errorMessage = ex.Message;
+            }
+            finally
+            {
+                stopwatch.Stop();
+
+                if (!success)
                 {
-                    errorMessage = ex.Message;
-                    _logger.LogWarning("Cabal: [{JobName}] failed (attempt {Attempt}/{Max}). {Error}",
-                        definition.Name, currentAttempt, maxAttempts, ex.Message);
-
-                    if (currentAttempt < maxAttempts && !stoppingToken.IsCancellationRequested)
-                    {
-                        var delaySeconds = Math.Pow(2, currentAttempt);
-                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds), stoppingToken);
-                    }
+                    _logger.LogError("Cabal: [{JobName}] failed after {Max} attempts.", definition.Name, maxAttempts);
                 }
+                else
+                {
+                    _logger.LogInformation("Cabal: [{JobName}] completed in {Ms}ms.", definition.Name, stopwatch.ElapsedMilliseconds);
+                }
+
+                await _storage.MarkJobAsCompletedAsync(jobId, (int)definition.Interval.TotalSeconds, success, errorMessage);
             }
+        });
 
-            stopwatch.Stop();
-
-            if (!success)
-            {
-                _logger.LogError("Cabal: [{JobName}] failed after {Max} attempts.", definition.Name, maxAttempts);
-            }
-            else
-            {
-                _logger.LogInformation("Cabal: [{JobName}] completed in {Ms}ms.", definition.Name, stopwatch.ElapsedMilliseconds);
-            }
-
-            await _storage.MarkJobAsCompletedAsync(jobId, (int)definition.Interval.TotalSeconds, success, errorMessage);
-            
-        }, stoppingToken);
-
-        return true; // Retornamos true indicando que encontramos y lanzamos una tarea
+        return true;
     }
 }
