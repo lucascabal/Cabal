@@ -3,120 +3,523 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cabal Control Center - Terminal OS</title>
+    <title>CABAL SCHEDULER // VAULT-TEC TERMINAL OS</title>
     
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
     <link rel="stylesheet" href="https://unpkg.com/uplot@1.6.30/dist/uPlot.min.css">
     
     <style>
-        :root {
-            /* Fallout Green Palette */
-            --terminal-green: #4ade80;
-            --terminal-dark: #052e16;
-            --terminal-bg: #000000;
-            --terminal-border: #14532d;
-            --terminal-glow: rgba(74, 222, 128, 0.15);
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
 
-            /* Shadcn Override Variables */
-            --background: var(--terminal-bg);
-            --foreground: var(--terminal-green);
-            --muted: var(--terminal-dark);
-            --muted-foreground: #22c55e;
-            --border: var(--terminal-border);
-            --card: #050505;
-            --radius: 0.25rem;
+        :root {
+            /* Pip-Boy Green Palette */
+            --pip-green: #4ade80;
+            --pip-green-bright: #5efc94;
+            --pip-green-dark: #22c55e;
+            --pip-bg: #000000;
+            --pip-screen: #001a0e;
+            --pip-border: #14532d;
+            --pip-glow: rgba(74, 222, 128, 0.3);
+            --pip-glow-intense: rgba(74, 222, 128, 0.6);
             
             /* Pico.css Overrides */
-            --pico-background-color: var(--background);
-            --pico-color: var(--foreground);
-            --pico-text-selection-color: var(--terminal-dark);
-            --pico-muted-color: var(--muted-foreground);
-            --pico-border-color: var(--border);
-            --pico-table-border-color: var(--border);
-            --pico-table-row-stripped-background-color: transparent;
-            --pico-table-body-divider-width: 1px;
-            --pico-primary: var(--terminal-green);
+            --pico-background-color: var(--pip-bg);
+            --pico-color: var(--pip-green);
+            --pico-border-color: var(--pip-border);
+            --pico-primary: var(--pip-green);
             
-            /* Typography: Monospace for that CRT feel */
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            /* Typography */
+            font-family: 'Share Tech Mono', 'Courier New', monospace;
         }
+
+        * { box-sizing: border-box; }
 
         body { 
-            padding-top: 1.5rem; 
-            text-transform: uppercase; 
-        }
-        
-        nav { 
-            margin-bottom: 2rem; 
-            border-bottom: 1px solid var(--border); 
-            padding-bottom: 1rem; 
-        }
-        
-        .cabal-brand { 
-            font-weight: 700; 
-            font-size: 1.25rem; 
-            letter-spacing: 0.1em; 
-            text-shadow: 0 0 8px var(--terminal-glow);
-        }
-        
-        /* Minimalist Shadcn Cards with Green Glow */
-        .stat-card { 
-            padding: 1.5rem; 
-            border-radius: var(--radius); 
-            background-color: var(--card); 
-            border: 1px solid var(--border);
-            box-shadow: 0 4px 12px var(--terminal-glow);
-        }
-        .stat-card header { 
-            font-size: 0.875rem; 
-            font-weight: bold; 
-            color: var(--muted-foreground); 
-            margin-bottom: 0.5rem; 
-            border: none;
+            margin: 0;
             padding: 0;
+            background: var(--pip-bg);
+            color: var(--pip-green);
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* CRT Screen Effect */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: 
+                linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+                linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+            z-index: 9999;
+            animation: scanline 8s linear infinite;
+        }
+
+        /* Scanline Animation */
+        @keyframes scanline {
+            0% { background-position: 0 0; }
+            100% { background-position: 0 100%; }
+        }
+
+        /* Screen Flicker */
+        @keyframes flicker {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.98; }
+        }
+
+        /* CRT Glow Effect */
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(ellipse at center, 
+                rgba(74, 222, 128, 0.03) 0%,
+                rgba(0, 0, 0, 0.5) 100%);
+            pointer-events: none;
+            z-index: 9998;
+            animation: flicker 0.15s infinite;
+        }
+
+        /* Main Container */
+        .pip-boy-screen {
+            position: relative;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+            animation: screen-boot 2s ease-out;
+        }
+
+        @keyframes screen-boot {
+            0% { 
+                opacity: 0; 
+                filter: brightness(0);
+            }
+            50% { 
+                opacity: 0.5;
+                filter: brightness(1.5);
+            }
+            100% { 
+                opacity: 1;
+                filter: brightness(1);
+            }
+        }
+
+        /* Terminal Header */
+        .terminal-header {
+            background: var(--pip-screen);
+            border: 2px solid var(--pip-green);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 
+                0 0 20px var(--pip-glow),
+                inset 0 0 20px rgba(0, 0, 0, 0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .terminal-header::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(45deg, 
+                transparent 48%, 
+                var(--pip-green) 49%, 
+                var(--pip-green) 51%, 
+                transparent 52%);
+            background-size: 20px 20px;
+            opacity: 0.03;
+        }
+
+        .terminal-title {
+            font-size: 2rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            text-align: center;
+            margin: 0;
+            text-shadow: 
+                0 0 10px var(--pip-green-bright),
+                0 0 20px var(--pip-green),
+                0 0 30px var(--pip-green);
+            animation: glow-pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes glow-pulse {
+            0%, 100% { 
+                text-shadow: 
+                    0 0 10px var(--pip-green-bright),
+                    0 0 20px var(--pip-green),
+                    0 0 30px var(--pip-green);
+            }
+            50% { 
+                text-shadow: 
+                    0 0 15px var(--pip-green-bright),
+                    0 0 30px var(--pip-green),
+                    0 0 45px var(--pip-green);
+            }
+        }
+
+        .terminal-subtitle {
+            text-align: center;
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+            opacity: 0.7;
+            letter-spacing: 0.2em;
+        }
+
+        /* Stat Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--pip-screen);
+            border: 2px solid var(--pip-green);
+            padding: 1.5rem;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 
+                0 0 15px var(--pip-glow),
+                inset 0 0 15px rgba(0, 0, 0, 0.5);
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            border-color: var(--pip-green-bright);
+            box-shadow: 
+                0 0 25px var(--pip-glow-intense),
+                inset 0 0 15px rgba(0, 0, 0, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: -2px; left: -2px; right: -2px; bottom: -2px;
+            background: linear-gradient(45deg, var(--pip-green) 0%, transparent 50%, var(--pip-green) 100%);
+            opacity: 0.1;
+            z-index: 0;
+        }
+
+        .stat-card-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .stat-header {
+            font-size: 0.75rem;
+            font-weight: bold;
+            color: var(--pip-green-dark);
+            margin-bottom: 0.75rem;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            border-bottom: 1px solid var(--pip-border);
+            padding-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 3rem;
+            font-weight: bold;
+            margin: 0;
+            line-height: 1;
+            text-shadow: 0 0 10px var(--pip-green);
+            animation: number-flicker 0.1s infinite;
+        }
+
+        @keyframes number-flicker {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.95; }
+        }
+
+        .stat-label {
+            font-size: 0.7rem;
+            margin-top: 0.5rem;
+            opacity: 0.6;
+            letter-spacing: 0.1em;
+        }
+
+        /* Critical Alert */
+        .stat-card.critical {
+            border-color: #ef4444;
+            animation: critical-pulse 1s ease-in-out infinite;
+        }
+
+        .stat-card.critical .stat-value {
+            color: #ef4444;
+            text-shadow: 0 0 10px #ef4444;
+        }
+
+        @keyframes critical-pulse {
+            0%, 100% { 
+                box-shadow: 
+                    0 0 15px rgba(239, 68, 68, 0.5),
+                    inset 0 0 15px rgba(0, 0, 0, 0.5);
+            }
+            50% { 
+                box-shadow: 
+                    0 0 30px rgba(239, 68, 68, 0.8),
+                    inset 0 0 15px rgba(0, 0, 0, 0.5);
+            }
+        }
+
+        /* Chart Container */
+        .chart-panel {
+            background: var(--pip-screen);
+            border: 2px solid var(--pip-green);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 
+                0 0 20px var(--pip-glow),
+                inset 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .chart-header {
+            font-size: 1rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--pip-green);
+            border-bottom: 1px solid var(--pip-border);
+            padding-bottom: 0.5rem;
+        }
+
+        /* Tables */
+        .data-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        @media (max-width: 992px) {
+            .data-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .data-panel {
+            background: var(--pip-screen);
+            border: 2px solid var(--pip-green);
+            padding: 1.5rem;
+            box-shadow: 
+                0 0 15px var(--pip-glow),
+                inset 0 0 15px rgba(0, 0, 0, 0.5);
+        }
+
+        .panel-header {
+            font-size: 0.9rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            border-bottom: 1px solid var(--pip-border);
+            padding-bottom: 0.5rem;
+        }
+
+        table {
+            width: 100%;
+            font-size: 0.8rem;
+            border-collapse: collapse;
+        }
+
+        th {
+            font-weight: bold;
+            color: var(--pip-green-dark);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            padding: 0.75rem 0.5rem;
+            border-bottom: 2px solid var(--pip-border);
+        }
+
+        td {
+            padding: 0.75rem 0.5rem;
+            border-bottom: 1px solid var(--pip-border);
+        }
+
+        tbody tr {
+            transition: background 0.2s ease;
+        }
+
+        tbody tr:hover {
+            background: rgba(74, 222, 128, 0.05);
+        }
+
+        /* Badge */
+        .status-badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            font-size: 0.7rem;
+            font-weight: bold;
+            border: 1px solid;
+            text-transform: uppercase;
             letter-spacing: 0.05em;
         }
-        .stat-value { font-size: 2.5rem; font-weight: bold; margin: 0; line-height: 1; }
-        
-        table { font-size: 0.875rem; }
-        th { font-weight: bold; color: var(--muted-foreground); letter-spacing: 0.05em; }
-        
-        .badge { 
-            padding: 0.1rem 0.5rem; 
-            border-radius: var(--radius); 
-            font-size: 0.75rem; 
-            font-weight: bold; 
-            border: 1px solid var(--terminal-green);
+
+        .badge-success {
+            background: rgba(74, 222, 128, 0.1);
+            border-color: var(--pip-green);
+            color: var(--pip-green-bright);
+            box-shadow: 0 0 5px var(--pip-glow);
         }
-        .badge-success { background: var(--terminal-dark); color: var(--terminal-green); }
-        .badge-error { background: var(--terminal-green); color: var(--terminal-bg); animation: blink 1s step-end infinite;}
 
-        @keyframes blink { 50% { opacity: 0.7; } }
+        .badge-error {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: #ef4444;
+            color: #ef4444;
+            box-shadow: 0 0 5px rgba(239, 68, 68, 0.5);
+            animation: blink 1s step-end infinite;
+        }
 
-        .chart-container { 
-            margin-bottom: 2rem; 
-            padding: 1.5rem; 
-            border: 1px solid var(--border); 
-            border-radius: var(--radius); 
-            background-color: var(--card);
+        @keyframes blink {
+            50% { opacity: 0.5; }
+        }
+
+        /* Loading State */
+        .loading-screen {
+            text-align: center;
+            padding: 4rem 2rem;
+            font-size: 1.5rem;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            animation: loading-pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes loading-pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+
+        .loading-screen::after {
+            content: '...';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+
+        /* Cursor Blink */
+        .cursor {
+            animation: cursor-blink 1s step-end infinite;
+        }
+
+        @keyframes cursor-blink {
+            50% { opacity: 0; }
+        }
+
+        /* uPlot Customization */
+        .uplot {
+            font-family: 'Share Tech Mono', monospace !important;
+        }
+
+        .u-legend {
+            background: var(--pip-screen) !important;
+            border: 1px solid var(--pip-border) !important;
+            color: var(--pip-green) !important;
+        }
+
+        .u-series {
+            color: var(--pip-green) !important;
+        }
+
+        /* Performance Indicator */
+        .perf-indicator {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            background: var(--pip-screen);
+            border: 1px solid var(--pip-green);
+            padding: 0.5rem 1rem;
+            font-size: 0.7rem;
+            box-shadow: 0 0 10px var(--pip-glow);
+            z-index: 1000;
+            animation: fade-in 1s ease-out;
+        }
+
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Corner Decorations */
+        .corner-decoration {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--pip-green);
+        }
+
+        .corner-tl {
+            top: -2px;
+            left: -2px;
+            border-right: none;
+            border-bottom: none;
+        }
+
+        .corner-tr {
+            top: -2px;
+            right: -2px;
+            border-left: none;
+            border-bottom: none;
+        }
+
+        .corner-bl {
+            bottom: -2px;
+            left: -2px;
+            border-right: none;
+            border-top: none;
+        }
+
+        .corner-br {
+            bottom: -2px;
+            right: -2px;
+            border-left: none;
+            border-top: none;
         }
     </style>
 </head>
 <body>
-    <main class="container-fluid" style="max-width: 1200px;" id="app">
-        <article aria-busy="true" style="margin-top: 20vh; text-align: center; background: transparent; border: none; color: var(--terminal-green);">
-            BOOTING CABAL.SCHEDULER ENGINE...
-        </article>
-    </main>
+    <div class="pip-boy-screen">
+        <div id="app">
+            <div class="loading-screen">
+                >> INITIALIZING CABAL.SCHEDULER
+                <br>
+                >> ESTABLISHING SECURE CONNECTION
+                <br>
+                >> LOADING TELEMETRY DATA<span class="cursor">_</span>
+            </div>
+        </div>
+    </div>
 
     <script type="module">
-        // Direct imports from CDNs
         import { html, render, useState, useEffect, useRef } from 'https://unpkg.com/htm/preact/standalone.module.js';
         import uPlot from 'https://unpkg.com/uplot@1.6.30/dist/uPlot.esm.js';
 
         const formatTime = (isoString) => {
-            if (!isoString) return "-";
-            return new Date(isoString).toLocaleTimeString('en-US', { hour12: false });
+            if (!isoString) return "N/A";
+            return new Date(isoString).toLocaleTimeString('en-US', { 
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        };
+
+        const formatTimeShort = (isoString) => {
+            if (!isoString) return "N/A";
+            return new Date(isoString).toLocaleTimeString('en-US', { 
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit'
+            });
         };
 
         function UPlotChart({ data }) {
@@ -128,21 +531,36 @@
 
                 const opts = {
                     width: chartRef.current.clientWidth,
-                    height: 200,
-                    cursor: { y: false },
+                    height: 220,
+                    cursor: { 
+                        y: false,
+                        drag: { x: false, y: false }
+                    },
                     series: [
                         {}, 
                         {
-                            label: "EXEC",
+                            label: "EXECUTIONS",
                             stroke: "#4ade80", 
-                            width: 2,
-                            fill: "rgba(74, 222, 128, 0.1)" 
+                            width: 3,
+                            fill: "rgba(74, 222, 128, 0.15)",
+                            points: { show: false }
                         }
                     ],
                     axes: [
-                        { stroke: "#22c55e", grid: { stroke: "#14532d" } }, 
-                        { stroke: "#22c55e", grid: { stroke: "#14532d" } }  
-                    ]
+                        { 
+                            stroke: "#22c55e", 
+                            grid: { stroke: "#14532d", width: 1 },
+                            ticks: { stroke: "#22c55e" }
+                        }, 
+                        { 
+                            stroke: "#22c55e", 
+                            grid: { stroke: "#14532d", width: 1 },
+                            ticks: { stroke: "#22c55e" }
+                        }
+                    ],
+                    scales: {
+                        x: { time: true }
+                    }
                 };
 
                 const chartData = [
@@ -164,18 +582,22 @@
                 };
             }, [data]);
 
-            return html`<div ref=${chartRef} style="width: 100%;"></div>`;
+            return html`<div ref=${chartRef} style="width: 100%; height: 220px;"></div>`;
         }
 
         function Dashboard() {
             const [stats, setStats] = useState(null);
+            const [lastUpdate, setLastUpdate] = useState(Date.now());
 
             useEffect(() => {
                 const fetchStats = () => {
                     fetch(window.location.pathname + '/api/stats')
                         .then(res => res.json())
-                        .then(data => setStats(data))
-                        .catch(err => console.error("SYS_ERR:", err));
+                        .then(data => {
+                            setStats(data);
+                            setLastUpdate(Date.now());
+                        })
+                        .catch(err => console.error("[SYS_ERR]", err));
                 };
                 
                 fetchStats();
@@ -183,82 +605,139 @@
                 return () => clearInterval(interval);
             }, []);
 
-            if (!stats) return html`<div style="text-align: center; margin-top: 2rem;">AWAITING TELEMETRY...</div>`;
+            if (!stats) {
+                return html`
+                    <div class="loading-screen">
+                        >> INITIALIZING CABAL.SCHEDULER
+                        <br>
+                        >> ESTABLISHING SECURE CONNECTION
+                        <br>
+                        >> LOADING TELEMETRY DATA<span class="cursor">_</span>
+                    </div>
+                `;
+            }
 
             return html`
-                <nav>
-                    <ul><li><span class="cabal-brand">> CABAL.SCHEDULER_</span></li></ul>
-                    <ul><li><span>V1.0.0-BETA</span></li></ul>
-                </nav>
+                <div class="terminal-header">
+                    <div class="corner-decoration corner-tl"></div>
+                    <div class="corner-decoration corner-tr"></div>
+                    <div class="corner-decoration corner-bl"></div>
+                    <div class="corner-decoration corner-br"></div>
+                    <h1 class="terminal-title">
+                        >> CABAL.SCHEDULER<span class="cursor">_</span>
+                    </h1>
+                    <div class="terminal-subtitle">
+                        VAULT-TEC AUTOMATED TASK EXECUTION SYSTEM // v1.0.0-BETA
+                    </div>
+                </div>
                 
-                <div class="grid" style="margin-bottom: 2rem;">
+                <div class="stats-grid">
                     <div class="stat-card">
-                        <header>ACTIVE DIRECTIVES</header>
-                        <p class="stat-value">${stats.ActiveJobs}</p>
+                        <div class="stat-card-content">
+                            <div class="stat-header">⚡ Active Directives</div>
+                            <div class="stat-value">${stats.ActiveJobs}</div>
+                            <div class="stat-label">OPERATIONAL PROTOCOLS</div>
+                        </div>
                     </div>
+                    
                     <div class="stat-card">
-                        <header>TOTAL CYCLES</header>
-                        <p class="stat-value">${stats.TotalExecutions}</p>
+                        <div class="stat-card-content">
+                            <div class="stat-header">📊 Total Cycles</div>
+                            <div class="stat-value">${stats.TotalExecutions.toLocaleString()}</div>
+                            <div class="stat-label">COMPLETED EXECUTIONS</div>
+                        </div>
                     </div>
-                    <div class="stat-card" style="${stats.FailedExecutions > 0 ? 'border-color: #ef4444;' : ''}">
-                        <header>CRITICAL ERRORS</header>
-                        <p class="stat-value" style="${stats.FailedExecutions > 0 ? 'color: #ef4444;' : ''}">${stats.FailedExecutions}</p>
+                    
+                    <div class="stat-card ${stats.FailedExecutions > 0 ? 'critical' : ''}">
+                        <div class="stat-card-content">
+                            <div class="stat-header">⚠ Critical Errors</div>
+                            <div class="stat-value">${stats.FailedExecutions}</div>
+                            <div class="stat-label">SYSTEM FAILURES</div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="chart-container">
-                    <h4 style="margin-bottom: 1rem; font-size: 1rem; font-weight: bold;">PERFORMANCE (RPM)</h4>
+                <div class="chart-panel">
+                    <div class="corner-decoration corner-tl"></div>
+                    <div class="corner-decoration corner-tr"></div>
+                    <div class="corner-decoration corner-bl"></div>
+                    <div class="corner-decoration corner-br"></div>
+                    <h3 class="chart-header">📈 Performance Monitor (RPM)</h3>
                     <${UPlotChart} data=${stats} />
                 </div>
                 
-                <div class="grid">
-                    <section>
-                        <h4 style="font-size: 1rem; font-weight: bold; margin-bottom: 1rem;">STORED PROTOCOLS</h4>
-                        <table role="grid" style="margin: 0;">
+                <div class="data-grid">
+                    <div class="data-panel">
+                        <div class="corner-decoration corner-tl"></div>
+                        <div class="corner-decoration corner-tr"></div>
+                        <div class="corner-decoration corner-bl"></div>
+                        <div class="corner-decoration corner-br"></div>
+                        <h3 class="panel-header">📋 Registered Protocols</h3>
+                        <table>
                             <thead>
                                 <tr>
-                                    <th>DESIGNATION</th>
-                                    <th>INTERVAL</th>
-                                    <th>NEXT UPLINK</th>
+                                    <th>Designation</th>
+                                    <th>Interval</th>
+                                    <th>Next Exec</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                ${stats.Jobs.map(job => html`
+                                ${stats.Jobs.length === 0 ? html`
+                                    <tr>
+                                        <td colspan="3" style="text-align: center; opacity: 0.5; padding: 2rem;">
+                                            NO PROTOCOLS REGISTERED
+                                        </td>
+                                    </tr>
+                                ` : stats.Jobs.map(job => html`
                                     <tr>
                                         <td><strong>${job.Name}</strong></td>
-                                        <td>${job.IntervalSeconds}S</td>
-                                        <td>${formatTime(job.NextExecution)}</td>
+                                        <td>${job.IntervalSeconds}s</td>
+                                        <td>${formatTimeShort(job.NextExecution)}</td>
                                     </tr>
                                 `)}
                             </tbody>
                         </table>
-                    </section>
+                    </div>
 
-                    <section>
-                        <h4 style="font-size: 1rem; font-weight: bold; margin-bottom: 1rem;">SYS_LOG OUTPUT</h4>
-                        <table role="grid" style="margin: 0;">
+                    <div class="data-panel">
+                        <div class="corner-decoration corner-tl"></div>
+                        <div class="corner-decoration corner-tr"></div>
+                        <div class="corner-decoration corner-bl"></div>
+                        <div class="corner-decoration corner-br"></div>
+                        <h3 class="panel-header">📝 System Log</h3>
+                        <table>
                             <thead>
                                 <tr>
-                                    <th>TIMESTAMP</th>
-                                    <th>PROTOCOL</th>
-                                    <th>STATUS</th>
+                                    <th>Time</th>
+                                    <th>Protocol</th>
+                                    <th>Status</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                ${stats.History.map(log => html`
+                                ${stats.History.length === 0 ? html`
+                                    <tr>
+                                        <td colspan="3" style="text-align: center; opacity: 0.5; padding: 2rem;">
+                                            NO EXECUTION HISTORY
+                                        </td>
+                                    </tr>
+                                ` : stats.History.map(log => html`
                                     <tr>
                                         <td>${formatTime(log.ExecutedAt)}</td>
                                         <td>${log.JobName}</td>
                                         <td>
-                                            <span class="badge ${log.Status === 'Success' ? 'badge-success' : 'badge-error'}">
-                                                ${log.Status}
+                                            <span class="status-badge ${log.Status === 'Success' ? 'badge-success' : 'badge-error'}">
+                                                ${log.Status === 'Success' ? '✓ OK' : '✗ ERR'}
                                             </span>
                                         </td>
                                     </tr>
                                 `)}
                             </tbody>
                         </table>
-                    </section>
+                    </div>
+                </div>
+
+                <div class="perf-indicator">
+                    Online -> Last sync: ${new Date(lastUpdate).toLocaleTimeString('en-US', { hour12: false })}
                 </div>
             `;
         }

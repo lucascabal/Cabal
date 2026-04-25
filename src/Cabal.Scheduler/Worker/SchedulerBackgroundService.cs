@@ -16,6 +16,8 @@ public class SchedulerBackgroundService : BackgroundService
     private readonly TimeSpan _pollingInterval;
 
     private readonly Dictionary<string, JobDefinition> _jobDelegates = [];
+    private readonly List<Task> _activeTasks = [];
+    private readonly object _lock = new();
 
     public SchedulerBackgroundService(
         IJobStorage storage,
@@ -45,14 +47,15 @@ public class SchedulerBackgroundService : BackgroundService
 
         using var timer = new PeriodicTimer(_pollingInterval);
 
-        
         while (!stoppingToken.IsCancellationRequested)
         {
             var hasMore = await TryDispatchNextJobAsync(stoppingToken);
-            if (!hasMore)
+            
+            if (hasMore)
             {
-                break;
+                continue;
             }
+
             try
             {
                 await timer.WaitForNextTickAsync(stoppingToken);
@@ -62,6 +65,18 @@ public class SchedulerBackgroundService : BackgroundService
                 break;
             }
         }
+
+        Task[] tasksToAwait;
+        lock (_lock)
+        {
+            tasksToAwait = [.. _activeTasks];
+        }
+
+        if (tasksToAwait.Length > 0)
+        {
+            _logger.LogInformation("Cabal Scheduler: Awaiting {Count} active jobs to complete...", tasksToAwait.Length);
+            await Task.WhenAll(tasksToAwait);
+        }
     }
 
     private async Task<bool> TryDispatchNextJobAsync(CancellationToken stoppingToken)
@@ -69,7 +84,7 @@ public class SchedulerBackgroundService : BackgroundService
         var jobId = await _storage.GetAndLockNextJobAsync(DateTime.UtcNow);
         if (jobId == null) return false;
 
-        _ = Task.Run(async () =>
+        var task = Task.Run(async () =>
         {
             var jobRecord = await _storage.GetJobByIdAsync(jobId);
             if (jobRecord == null || !_jobDelegates.TryGetValue(jobRecord.Name, out var definition))
@@ -140,6 +155,19 @@ public class SchedulerBackgroundService : BackgroundService
                 }
 
                 await _storage.MarkJobAsCompletedAsync(jobId, (int)definition.Interval.TotalSeconds, success, errorMessage);
+            }
+        });
+
+        lock (_lock)
+        {
+            _activeTasks.Add(task);
+        }
+
+        _ = task.ContinueWith(t =>
+        {
+            lock (_lock)
+            {
+                _activeTasks.Remove(t);
             }
         });
 

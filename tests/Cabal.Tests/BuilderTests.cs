@@ -13,6 +13,7 @@ public class BuilderTests
         Schedule.Every(5).Minutes()
                 .WithName("Cleaning test")
                 .WithRetries(3)
+                .WithTimeout(TimeSpan.FromMinutes(10))
                 .Do(() => { });
 
         var pendingJobs = Schedule.ConsumeJobs().ToList();
@@ -23,5 +24,6 @@ public class BuilderTests
         job.Name.Should().Be("Cleaning test");
         job.Interval.Should().Be(TimeSpan.FromMinutes(5));
         job.MaxRetries.Should().Be(3);
+        job.LockTimeout.Should().Be(TimeSpan.FromMinutes(10));
     }
 }

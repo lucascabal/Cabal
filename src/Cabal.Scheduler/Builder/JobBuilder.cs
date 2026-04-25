@@ -10,6 +10,7 @@ public class JobBuilder
     private readonly TimeSpan _interval;
     private string _jobName = "Anonymous Job";
     private int _maxRetries = 0;
+    private TimeSpan _lockTimeout = TimeSpan.FromMinutes(5);
 
     internal JobBuilder(TimeSpan interval) => _interval = interval;
 
@@ -25,6 +26,12 @@ public class JobBuilder
         return this;
     }
 
+    public JobBuilder WithTimeout(TimeSpan timeout)
+    {
+        _lockTimeout = timeout;
+        return this;
+    }
+
     public void Do(Func<IServiceProvider, CancellationToken, Task> action)
     {
         if (action == null) throw new ArgumentNullException(nameof(action));
@@ -34,6 +41,7 @@ public class JobBuilder
             Name = _jobName,
             Interval = _interval,
             MaxRetries = _maxRetries,
+            LockTimeout = _lockTimeout,
             ActionToExecute = action
         };
 

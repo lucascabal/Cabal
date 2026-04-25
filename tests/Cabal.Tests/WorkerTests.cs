@@ -23,7 +23,7 @@ public class WorkerTests
 
         var jobDefinition = Schedule.PendingJobs.First();
 
-        mockStorage.GetAndLockNextJobAsync(Arg.Any<DateTime>()).Returns(jobDefinition.Id);
+        mockStorage.GetAndLockNextJobAsync(Arg.Any<DateTime>()).Returns(jobDefinition.Id, (string?)null);
         mockStorage.GetJobByIdAsync(jobDefinition.Id).Returns(new JobDefinitionRecord(jobDefinition.Id, "Bomb task", 60));
 
         var worker = new SchedulerBackgroundService(mockStorage, logger, scopeFactory, TimeSpan.FromMilliseconds(50));
@@ -40,12 +40,6 @@ public class WorkerTests
         );
     }
 
-    /// <summary>
-    /// If storage returns a jobId whose Name has no registered delegate in memory,
-    /// the worker does a bare `return` without releasing the lock.
-    /// The job stays blocked for 5 minutes.
-    /// MarkJobAsCompletedAsync MUST be called to release the lock.
-    /// </summary>
     [Fact]
     public async Task ProcessNextJob_WhenDelegateNotRegistered_ShouldReleaseTheLock()
     {
@@ -76,10 +70,6 @@ public class WorkerTests
         );
     }
 
-    /// <summary>
-    /// An orphan job (no delegate) must not block legitimate jobs from running
-    /// on the next tick.
-    /// </summary>
     [Fact]
     public async Task ProcessNextJob_WhenOrphanJobFollowedByNormalJob_BothAreProcessed()
     {

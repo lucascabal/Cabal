@@ -27,6 +27,7 @@ public class SqliteJobStorage : IJobStorage
                 Id TEXT PRIMARY KEY,
                 Name TEXT UNIQUE NOT NULL,
                 IntervalSeconds INTEGER NOT NULL,
+                LockTimeoutSeconds INTEGER NOT NULL DEFAULT 300,
                 LastExecution TEXT NULL,
                 NextExecution TEXT NOT NULL,
                 LockedUntil TEXT NULL
@@ -42,6 +43,22 @@ public class SqliteJobStorage : IJobStorage
             );
         ";
         await command.ExecuteNonQueryAsync();
+
+        // Add this migration block to seamlessly upgrade existing databases
+        await using var migrateCmd = connection.CreateCommand();
+        migrateCmd.CommandText = @"
+            SELECT COUNT(*) 
+            FROM pragma_table_info('ScheduledJobs') 
+            WHERE name='LockTimeoutSeconds';
+        ";
+        var columnExists = Convert.ToInt32(await migrateCmd.ExecuteScalarAsync()) > 0;
+
+        if (!columnExists)
+        {
+            await using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN LockTimeoutSeconds INTEGER NOT NULL DEFAULT 300;";
+            await alterCmd.ExecuteNonQueryAsync();
+        }
     }
 
     public async Task SyncJobsFromMemoryAsync(IEnumerable<JobDefinition> jobs)
@@ -56,14 +73,16 @@ public class SqliteJobStorage : IJobStorage
         {
             await using var upsertCmd = connection.CreateCommand();
             upsertCmd.CommandText = @"
-                INSERT INTO ScheduledJobs (Id, Name, IntervalSeconds, NextExecution)
-                VALUES (@id, @name, @interval, @nextExecution)
+                INSERT INTO ScheduledJobs (Id, Name, IntervalSeconds, LockTimeoutSeconds, NextExecution)
+                VALUES (@id, @name, @interval, @lockTimeout, @nextExecution)
                 ON CONFLICT(Name) DO UPDATE SET
-                    IntervalSeconds = excluded.IntervalSeconds;
+                    IntervalSeconds = excluded.IntervalSeconds,
+                    LockTimeoutSeconds = excluded.LockTimeoutSeconds;
             ";
             upsertCmd.Parameters.AddWithValue("@id", job.Id);
             upsertCmd.Parameters.AddWithValue("@name", job.Name);
             upsertCmd.Parameters.AddWithValue("@interval", (int)job.Interval.TotalSeconds);
+            upsertCmd.Parameters.AddWithValue("@lockTimeout", (int)job.LockTimeout.TotalSeconds);
             upsertCmd.Parameters.AddWithValue("@nextExecution", DateTime.UtcNow.Add(job.Interval).ToString("O"));
             await upsertCmd.ExecuteNonQueryAsync();
         }
@@ -95,18 +114,18 @@ public class SqliteJobStorage : IJobStorage
 
         command.CommandText = @"
             UPDATE ScheduledJobs
-            SET LockedUntil = @lockedUntil
+            SET LockedUntil = datetime(@now, '+' || LockTimeoutSeconds || ' seconds')
             WHERE Id = (
                 SELECT Id FROM ScheduledJobs
                 WHERE NextExecution <= @now
                   AND (LockedUntil IS NULL OR LockedUntil < @now)
+                ORDER BY NextExecution ASC
                 LIMIT 1
             )
             RETURNING Id;
         ";
 
         command.Parameters.AddWithValue("@now", now.ToString("O"));
-        command.Parameters.AddWithValue("@lockedUntil", now.AddMinutes(5).ToString("O"));
 
         var result = await command.ExecuteScalarAsync();
         return result?.ToString();
@@ -160,6 +179,10 @@ public class SqliteJobStorage : IJobStorage
             historyCmd.Parameters.AddWithValue("@error", errorMessage ?? (object)DBNull.Value);
             await historyCmd.ExecuteNonQueryAsync();
         }
+
+        await using var cleanupCmd = connection.CreateCommand();
+        cleanupCmd.CommandText = "DELETE FROM JobHistory WHERE ExecutedAt < datetime('now', '-7 days');";
+        await cleanupCmd.ExecuteNonQueryAsync();
 
         await transaction.CommitAsync();
     }
