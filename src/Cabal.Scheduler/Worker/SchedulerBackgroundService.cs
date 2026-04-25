@@ -47,7 +47,14 @@ public class SchedulerBackgroundService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            await ProcessNextJobAsync(stoppingToken);
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                var hasMore = await TryDispatchNextJobAsync(stoppingToken);
+                if (!hasMore)
+                {
+                    break;
+                }
+            }
 
             try
             {
@@ -60,63 +67,70 @@ public class SchedulerBackgroundService : BackgroundService
         }
     }
 
-    private async Task ProcessNextJobAsync(CancellationToken stoppingToken)
+    private async Task<bool> TryDispatchNextJobAsync(CancellationToken stoppingToken)
     {
         var jobId = await _storage.GetAndLockNextJobAsync(DateTime.UtcNow);
-        if (jobId == null) return;
+        if (jobId == null) return false;
 
-        var jobRecord = await _storage.GetJobByIdAsync(jobId);
-        if (jobRecord == null || !_jobDelegates.TryGetValue(jobRecord.Name, out var definition))
+        // Disparamos la ejecución en segundo plano para no bloquear al worker central
+        _ = Task.Run(async () =>
         {
-            _logger.LogWarning("Cabal: Job {JobId} found in storage but has no registered action. Releasing lock.", jobId);
-            var interval = jobRecord?.IntervalSeconds ?? 0;
-            await _storage.MarkJobAsCompletedAsync(jobId, interval, success: false, errorMessage: "No delegate registered for this job.");
-            return;
-        }
-
-        bool success = false;
-        string? errorMessage = null;
-        int currentAttempt = 0;
-        int maxAttempts = definition.MaxRetries + 1;
-
-        var stopwatch = Stopwatch.StartNew();
-
-        while (currentAttempt < maxAttempts && !success && !stoppingToken.IsCancellationRequested)
-        {
-            currentAttempt++;
-            try
+            var jobRecord = await _storage.GetJobByIdAsync(jobId);
+            if (jobRecord == null || !_jobDelegates.TryGetValue(jobRecord.Name, out var definition))
             {
-                using (var scope = _scopeFactory.CreateScope())
-                {
-                    await definition.ActionToExecute(scope.ServiceProvider, stoppingToken);
-                }
-                success = true;
+                _logger.LogWarning("Cabal: Job {JobId} found in storage but has no registered action. Releasing lock.", jobId);
+                var interval = jobRecord?.IntervalSeconds ?? 0;
+                await _storage.MarkJobAsCompletedAsync(jobId, interval, success: false, errorMessage: "No delegate registered for this job.");
+                return;
             }
-            catch (Exception ex)
+
+            bool success = false;
+            string? errorMessage = null;
+            int currentAttempt = 0;
+            int maxAttempts = definition.MaxRetries + 1;
+
+            var stopwatch = Stopwatch.StartNew();
+
+            while (currentAttempt < maxAttempts && !success && !stoppingToken.IsCancellationRequested)
             {
-                errorMessage = ex.Message;
-                _logger.LogWarning("Cabal: [{JobName}] failed (attempt {Attempt}/{Max}). {Error}",
-                    definition.Name, currentAttempt, maxAttempts, ex.Message);
-
-                if (currentAttempt < maxAttempts && !stoppingToken.IsCancellationRequested)
+                currentAttempt++;
+                try
                 {
-                    var delaySeconds = Math.Pow(2, currentAttempt);
-                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds), stoppingToken);
+                    using (var scope = _scopeFactory.CreateScope())
+                    {
+                        await definition.ActionToExecute(scope.ServiceProvider, stoppingToken);
+                    }
+                    success = true;
+                }
+                catch (Exception ex)
+                {
+                    errorMessage = ex.Message;
+                    _logger.LogWarning("Cabal: [{JobName}] failed (attempt {Attempt}/{Max}). {Error}",
+                        definition.Name, currentAttempt, maxAttempts, ex.Message);
+
+                    if (currentAttempt < maxAttempts && !stoppingToken.IsCancellationRequested)
+                    {
+                        var delaySeconds = Math.Pow(2, currentAttempt);
+                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds), stoppingToken);
+                    }
                 }
             }
-        }
 
-        stopwatch.Stop();
+            stopwatch.Stop();
 
-        if (!success)
-        {
-            _logger.LogError("Cabal: [{JobName}] failed after {Max} attempts.", definition.Name, maxAttempts);
-        }
-        else
-        {
-            _logger.LogInformation("Cabal: [{JobName}] completed in {Ms}ms.", definition.Name, stopwatch.ElapsedMilliseconds);
-        }
+            if (!success)
+            {
+                _logger.LogError("Cabal: [{JobName}] failed after {Max} attempts.", definition.Name, maxAttempts);
+            }
+            else
+            {
+                _logger.LogInformation("Cabal: [{JobName}] completed in {Ms}ms.", definition.Name, stopwatch.ElapsedMilliseconds);
+            }
 
-        await _storage.MarkJobAsCompletedAsync(jobId, (int)definition.Interval.TotalSeconds, success, errorMessage);
+            await _storage.MarkJobAsCompletedAsync(jobId, (int)definition.Interval.TotalSeconds, success, errorMessage);
+            
+        }, stoppingToken);
+
+        return true; // Retornamos true indicando que encontramos y lanzamos una tarea
     }
 }
