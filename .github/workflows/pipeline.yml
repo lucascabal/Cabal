@@ -10,21 +10,21 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
 
-  steps: 
-  - name: Download repo
-    uses: actions/chechout@v4
+    steps: 
+    - name: Download repo
+      uses: actions/chechout@v4
 
-  - name: Configure .Net SDK
-    uses: actions/setup-dotnet@v4
-    with:
-      dotnet-version: '8.0.x'
+    - name: Configure .Net SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
 
-  - name: Restore Nuget dependencies
-    run: dotnet restore
+    - name: Restore Nuget dependencies
+      run: dotnet restore
 
-  - name: Build solution
-    run: dotnet build --no-retore --configuration Release
+    - name: Build solution
+      run: dotnet build --no-retore --configuration Release
 
-  - name: Execute Tests
-    run: dotnet test --no-build --verbosity normal --configuration Release
+    - name: Execute Tests
+      run: dotnet test --no-build --verbosity normal --configuration Release
 
