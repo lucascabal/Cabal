@@ -13,17 +13,20 @@ public class SchedulerBackgroundService : BackgroundService
     private readonly IJobStorage _storage;
     private readonly ILogger<SchedulerBackgroundService> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly TimeSpan _pollingInterval;
 
     private readonly Dictionary<string, JobDefinition> _jobDelegates = [];
 
     public SchedulerBackgroundService(
         IJobStorage storage,
         ILogger<SchedulerBackgroundService> logger,
-        IServiceScopeFactory scopeFactory)
+        IServiceScopeFactory scopeFactory,
+        TimeSpan? pollingInterval = null)
     {
         _storage = storage;
         _logger = logger;
         _scopeFactory = scopeFactory;
+        _pollingInterval = pollingInterval ?? TimeSpan.FromSeconds(5);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -40,7 +43,7 @@ public class SchedulerBackgroundService : BackgroundService
 
         await _storage.SyncJobsFromMemoryAsync(registeredJobs);
 
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        using var timer = new PeriodicTimer(_pollingInterval);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -65,7 +68,9 @@ public class SchedulerBackgroundService : BackgroundService
         var jobRecord = await _storage.GetJobByIdAsync(jobId);
         if (jobRecord == null || !_jobDelegates.TryGetValue(jobRecord.Name, out var definition))
         {
-            _logger.LogWarning("Cabal: Job {JobId} found in storage but has no registered action.", jobId);
+            _logger.LogWarning("Cabal: Job {JobId} found in storage but has no registered action. Releasing lock.", jobId);
+            var interval = jobRecord?.IntervalSeconds ?? 0;
+            await _storage.MarkJobAsCompletedAsync(jobId, interval, success: false, errorMessage: "No delegate registered for this job.");
             return;
         }
 
