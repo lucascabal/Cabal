@@ -47,7 +47,7 @@ internal class DashboardMiddleware
         
         if (stream == null)
         {
-            await context.Response.WriteAsync("Error: No se encontró el archivo HTML incrustado.");
+            await context.Response.WriteAsync("Error: Html resource not found.");
             return;
         }
 

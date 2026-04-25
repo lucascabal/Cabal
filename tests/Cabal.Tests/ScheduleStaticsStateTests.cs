@@ -9,12 +9,12 @@ namespace Cabal.Tests;
 /// Integration tests against an in-memory SQLite database.
 /// Each test gets an isolated DB via a unique named shared-cache connection.
 /// </summary>
-public class SqliteStorageTests : IDisposable
+public class ScheduleStaticsStateTests : IDisposable
 {
     private readonly SqliteConnection _keepAlive;
     private readonly SqliteJobStorage _storage;
 
-    public SqliteStorageTests()
+    public ScheduleStaticsStateTests()
     {
         var dbName = Guid.NewGuid().ToString("N");
         var connStr = $"Data Source={dbName};Mode=Memory;Cache=Shared";
@@ -69,6 +69,10 @@ public class SqliteStorageTests : IDisposable
             because: "a job removed from code must not keep running from the database");
     }
 
+    /// <summary>
+    /// Happy path: completing a job should update NextExecution AND
+    /// create exactly one history entry — both atomically.
+    /// </summary>
     [Fact]
     public async Task MarkCompleted_HappyPath_ShouldUpdateJobAndWriteHistoryTogether()
     {
@@ -93,6 +97,8 @@ public class SqliteStorageTests : IDisposable
     /// <summary>
     /// Calling MarkJobAsCompletedAsync with an unknown jobId must not create
     /// orphan history entries. The UPDATE and INSERT must be treated atomically.
+    /// Currently passes (the INSERT subquery returns no rows), but documents
+    /// the expected contract and guards against future regressions.
     /// </summary>
     [Fact]
     public async Task MarkCompleted_WhenJobDoesNotExist_ShouldNotCreateOrphanHistory()

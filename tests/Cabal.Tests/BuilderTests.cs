@@ -6,12 +6,12 @@ namespace Cabal.Tests;
 public class BuilderTests
 {
     [Fact]
-    public void Schedule_Every_DeberiaGuardarElTrabajoEnMemoria()
+    public void Schedule_Every_ShouldStoreJobInMemory()
     {
         Schedule.ConsumeJobs(); 
 
         Schedule.Every(5).Minutes()
-                .WithName("Test de Limpieza")
+                .WithName("Cleaning test")
                 .WithRetries(3)
                 .Do(() => { });
 
@@ -20,7 +20,7 @@ public class BuilderTests
         pendingJobs.Should().HaveCount(1);
         var job = pendingJobs.First();
         
-        job.Name.Should().Be("Test de Limpieza");
+        job.Name.Should().Be("Cleaning test");
         job.Interval.Should().Be(TimeSpan.FromMinutes(5));
         job.MaxRetries.Should().Be(3);
     }

@@ -46,22 +46,42 @@ public class SqliteJobStorage : IJobStorage
 
     public async Task SyncJobsFromMemoryAsync(IEnumerable<JobDefinition> jobs)
     {
+        var jobList = jobs.ToList();
+
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
         await using var transaction = await connection.BeginTransactionAsync();
 
-        foreach (var job in jobs)
+        foreach (var job in jobList)
         {
-            await using var command = connection.CreateCommand();
-            command.CommandText = @"
-                INSERT OR IGNORE INTO ScheduledJobs (Id, Name, IntervalSeconds, NextExecution)
-                VALUES (@id, @name, @interval, @nextExecution);
+            await using var upsertCmd = connection.CreateCommand();
+            upsertCmd.CommandText = @"
+                INSERT INTO ScheduledJobs (Id, Name, IntervalSeconds, NextExecution)
+                VALUES (@id, @name, @interval, @nextExecution)
+                ON CONFLICT(Name) DO UPDATE SET
+                    IntervalSeconds = excluded.IntervalSeconds;
             ";
-            command.Parameters.AddWithValue("@id", job.Id);
-            command.Parameters.AddWithValue("@name", job.Name);
-            command.Parameters.AddWithValue("@interval", job.Interval.TotalSeconds);
-            command.Parameters.AddWithValue("@nextExecution", DateTime.UtcNow.Add(job.Interval).ToString("O"));
-            await command.ExecuteNonQueryAsync();
+            upsertCmd.Parameters.AddWithValue("@id", job.Id);
+            upsertCmd.Parameters.AddWithValue("@name", job.Name);
+            upsertCmd.Parameters.AddWithValue("@interval", (int)job.Interval.TotalSeconds);
+            upsertCmd.Parameters.AddWithValue("@nextExecution", DateTime.UtcNow.Add(job.Interval).ToString("O"));
+            await upsertCmd.ExecuteNonQueryAsync();
+        }
+
+        if (jobList.Count > 0)
+        {
+            var placeholders = string.Join(", ", jobList.Select((_, i) => $"@name{i}"));
+            await using var deleteCmd = connection.CreateCommand();
+            deleteCmd.CommandText = $"DELETE FROM ScheduledJobs WHERE Name NOT IN ({placeholders});";
+            for (int i = 0; i < jobList.Count; i++)
+                deleteCmd.Parameters.AddWithValue($"@name{i}", jobList[i].Name);
+            await deleteCmd.ExecuteNonQueryAsync();
+        }
+        else
+        {
+            await using var deleteAllCmd = connection.CreateCommand();
+            deleteAllCmd.CommandText = "DELETE FROM ScheduledJobs;";
+            await deleteAllCmd.ExecuteNonQueryAsync();
         }
 
         await transaction.CommitAsync();
@@ -97,13 +117,13 @@ public class SqliteJobStorage : IJobStorage
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Name FROM ScheduledJobs WHERE Id = @id LIMIT 1;";
+        command.CommandText = "SELECT Id, Name, IntervalSeconds FROM ScheduledJobs WHERE Id = @id LIMIT 1;";
         command.Parameters.AddWithValue("@id", id);
 
         await using var reader = await command.ExecuteReaderAsync();
         if (await reader.ReadAsync())
         {
-            return new JobDefinitionRecord(reader.GetString(0), reader.GetString(1));
+            return new JobDefinitionRecord(reader.GetString(0), reader.GetString(1), reader.GetInt32(2));
         }
         return null;
     }
@@ -113,24 +133,35 @@ public class SqliteJobStorage : IJobStorage
         var now = DateTime.UtcNow;
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
+        await using var transaction = await connection.BeginTransactionAsync();
 
-        command.CommandText = @"
+        await using var updateCmd = connection.CreateCommand();
+        updateCmd.CommandText = @"
             UPDATE ScheduledJobs
             SET LastExecution = @now, NextExecution = @next, LockedUntil = NULL
             WHERE Id = @id;
-
-            INSERT INTO JobHistory (JobId, JobName, ExecutedAt, Status, ErrorMessage)
-            SELECT @id, Name, @now, @status, @error
-            FROM ScheduledJobs WHERE Id = @id;
         ";
+        updateCmd.Parameters.AddWithValue("@id", jobId);
+        updateCmd.Parameters.AddWithValue("@now", now.ToString("O"));
+        updateCmd.Parameters.AddWithValue("@next", now.AddSeconds(intervalSeconds).ToString("O"));
+        var rowsAffected = await updateCmd.ExecuteNonQueryAsync();
 
-        command.Parameters.AddWithValue("@id", jobId);
-        command.Parameters.AddWithValue("@now", now.ToString("O"));
-        command.Parameters.AddWithValue("@next", now.AddSeconds(intervalSeconds).ToString("O"));
-        command.Parameters.AddWithValue("@status", success ? "Success" : "Error");
-        command.Parameters.AddWithValue("@error", errorMessage ?? (object)DBNull.Value);
-        await command.ExecuteNonQueryAsync();
+        if (rowsAffected > 0)
+        {
+            await using var historyCmd = connection.CreateCommand();
+            historyCmd.CommandText = @"
+                INSERT INTO JobHistory (JobId, JobName, ExecutedAt, Status, ErrorMessage)
+                SELECT @id, Name, @now, @status, @error
+                FROM ScheduledJobs WHERE Id = @id;
+            ";
+            historyCmd.Parameters.AddWithValue("@id", jobId);
+            historyCmd.Parameters.AddWithValue("@now", now.ToString("O"));
+            historyCmd.Parameters.AddWithValue("@status", success ? "Success" : "Error");
+            historyCmd.Parameters.AddWithValue("@error", errorMessage ?? (object)DBNull.Value);
+            await historyCmd.ExecuteNonQueryAsync();
+        }
+
+        await transaction.CommitAsync();
     }
 
     public async Task<DashboardStats> GetDashboardStatsAsync()
