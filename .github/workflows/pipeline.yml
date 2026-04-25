@@ -12,7 +12,7 @@ jobs:
 
     steps: 
     - name: Download repo
-      uses: actions/chechout@v4
+      uses: actions/checkout@v4
 
     - name: Configure .Net SDK
       uses: actions/setup-dotnet@v4
@@ -23,8 +23,7 @@ jobs:
       run: dotnet restore
 
     - name: Build solution
-      run: dotnet build --no-retore --configuration Release
+      run: dotnet build --no-restore --configuration Release
 
     - name: Execute Tests
       run: dotnet test --no-build --verbosity normal --configuration Release
-
