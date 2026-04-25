@@ -45,17 +45,14 @@ public class SchedulerBackgroundService : BackgroundService
 
         using var timer = new PeriodicTimer(_pollingInterval);
 
+        
         while (!stoppingToken.IsCancellationRequested)
         {
-            while (!stoppingToken.IsCancellationRequested)
+            var hasMore = await TryDispatchNextJobAsync(stoppingToken);
+            if (!hasMore)
             {
-                var hasMore = await TryDispatchNextJobAsync(stoppingToken);
-                if (!hasMore)
-                {
-                    break;
-                }
+                break;
             }
-
             try
             {
                 await timer.WaitForNextTickAsync(stoppingToken);
@@ -72,7 +69,6 @@ public class SchedulerBackgroundService : BackgroundService
         var jobId = await _storage.GetAndLockNextJobAsync(DateTime.UtcNow);
         if (jobId == null) return false;
 
-        // Disparamos la ejecución en segundo plano para no bloquear al worker central
         _ = Task.Run(async () =>
         {
             var jobRecord = await _storage.GetJobByIdAsync(jobId);

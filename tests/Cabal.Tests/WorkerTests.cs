@@ -32,7 +32,7 @@ public class WorkerTests
         await Task.Delay(100);
         await worker.StopAsync(CancellationToken.None);
 
-        await mockStorage.Received().MarkJobAsCompletedAsync(
+        _ = mockStorage.Received().MarkJobAsCompletedAsync(
             jobId: jobDefinition.Id,
             intervalSeconds: 60,
             success: false,
