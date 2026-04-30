@@ -1,0 +1,11 @@
+services:
+  postgres-cabal:
+    image: postgres:alpine
+    container_name: cabal-pg
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    restart: unless-stopped

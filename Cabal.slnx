@@ -5,6 +5,7 @@
   <Folder Name="/src/">
     <Project Path="src/Cabal.Scheduler/Cabal.Scheduler.csproj" />
     <Project Path="src/Cabal.SQLite/Cabal.SQLite.csproj" />
+    <Project Path="src/Cabal.PostgreSQL/Cabal.PostgreSQL.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Cabal.Tests/Cabal.Tests.csproj" />
