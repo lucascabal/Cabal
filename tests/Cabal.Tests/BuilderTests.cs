@@ -1,5 +1,5 @@
 using Cabal.Scheduler.Builder;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace Cabal.Tests;
 

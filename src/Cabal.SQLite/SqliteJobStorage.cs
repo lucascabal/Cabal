@@ -207,29 +207,33 @@ public class SqliteJobStorage : IJobStorage
         var jobs = new List<JobInfo>();
         await using var cmdJobs = connection.CreateCommand();
         cmdJobs.CommandText = "SELECT Name, IntervalSeconds, NextExecution, LockedUntil FROM ScheduledJobs ORDER BY Name;";
-        await using var readerJobs = await cmdJobs.ExecuteReaderAsync();
-        while (await readerJobs.ReadAsync())
+        await using (var readerJobs = await cmdJobs.ExecuteReaderAsync())
         {
-            jobs.Add(new JobInfo(
-                Name: readerJobs.GetString(0),
-                IntervalSeconds: readerJobs.GetInt32(1),
-                NextExecution: readerJobs.GetString(2),
-                LockedUntil: readerJobs.IsDBNull(3) ? null : readerJobs.GetString(3)
-            ));
+            while (await readerJobs.ReadAsync())
+            {
+                jobs.Add(new JobInfo(
+                    Name: readerJobs.GetString(0),
+                    IntervalSeconds: readerJobs.GetInt32(1),
+                    NextExecution: readerJobs.GetString(2),
+                    LockedUntil: readerJobs.IsDBNull(3) ? null : readerJobs.GetString(3)
+                ));
+            }
         }
 
         var history = new List<JobHistoryLog>();
         await using var cmdHistory = connection.CreateCommand();
         cmdHistory.CommandText = "SELECT JobName, ExecutedAt, Status, ErrorMessage FROM JobHistory ORDER BY Id DESC LIMIT 10;";
-        await using var readerHistory = await cmdHistory.ExecuteReaderAsync();
-        while (await readerHistory.ReadAsync())
+        await using (var readerHistory = await cmdHistory.ExecuteReaderAsync())
         {
-            history.Add(new JobHistoryLog(
-                JobName: readerHistory.GetString(0),
-                ExecutedAt: readerHistory.GetString(1),
-                Status: readerHistory.GetString(2),
-                ErrorMessage: readerHistory.IsDBNull(3) ? null : readerHistory.GetString(3)
-            ));
+            while (await readerHistory.ReadAsync())
+            {
+                history.Add(new JobHistoryLog(
+                    JobName: readerHistory.GetString(0),
+                    ExecutedAt: readerHistory.GetString(1),
+                    Status: readerHistory.GetString(2),
+                    ErrorMessage: readerHistory.IsDBNull(3) ? null : readerHistory.GetString(3)
+                ));
+            }
         }
 
         var performanceGraph = new List<GraphPoint>();
@@ -244,15 +248,17 @@ public class SqliteJobStorage : IJobStorage
             GROUP BY Timestamp
             ORDER BY Timestamp ASC;";
 
-        await using var readerGraph = await cmdGraph.ExecuteReaderAsync();
-        while (await readerGraph.ReadAsync())
+        await using (var readerGraph = await cmdGraph.ExecuteReaderAsync())
         {
-            if (!readerGraph.IsDBNull(0))
+            while (await readerGraph.ReadAsync())
             {
-                performanceGraph.Add(new GraphPoint(
-                    Timestamp: readerGraph.GetInt64(0),
-                    Executions: readerGraph.GetInt32(1)
-                ));
+                if (!readerGraph.IsDBNull(0))
+                {
+                    performanceGraph.Add(new GraphPoint(
+                        Timestamp: readerGraph.GetInt64(0),
+                        Executions: readerGraph.GetInt32(1)
+                    ));
+                }
             }
         }
 
