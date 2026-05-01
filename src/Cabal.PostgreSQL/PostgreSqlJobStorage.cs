@@ -38,12 +38,25 @@ public class PostgreSqlJobStorage : IJobStorage
                 Status TEXT NOT NULL,
                 ErrorMessage TEXT NULL
             );
-            
+
             CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_Next_Locked ON ScheduledJobs(NextExecution, LockedUntil);
             CREATE INDEX IF NOT EXISTS IX_JobHistory_ExecutedAt ON JobHistory(ExecutedAt);
         ";
-        
         await command.ExecuteNonQueryAsync();
+
+        await using var migrateCmd = connection.CreateCommand();
+        migrateCmd.CommandText = @"
+            SELECT COUNT(*) FROM information_schema.columns
+            WHERE table_name = 'scheduledjobs' AND column_name = 'locktimeoutseconds';
+        ";
+        var columnExists = Convert.ToInt32(await migrateCmd.ExecuteScalarAsync()) > 0;
+
+        if (!columnExists)
+        {
+            await using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN LockTimeoutSeconds INTEGER NOT NULL DEFAULT 300;";
+            await alterCmd.ExecuteNonQueryAsync();
+        }
     }
 
     public async Task SyncJobsFromMemoryAsync(IEnumerable<JobDefinition> jobs)
@@ -194,33 +207,29 @@ public class PostgreSqlJobStorage : IJobStorage
         var jobs = new List<JobInfo>();
         await using var cmdJobs = connection.CreateCommand();
         cmdJobs.CommandText = "SELECT Name, IntervalSeconds, NextExecution, LockedUntil FROM ScheduledJobs ORDER BY Name;";
-        await using (var readerJobs = await cmdJobs.ExecuteReaderAsync())
+        await using var readerJobs = await cmdJobs.ExecuteReaderAsync();
+        while (await readerJobs.ReadAsync())
         {
-            while (await readerJobs.ReadAsync())
-            {
-                jobs.Add(new JobInfo(
-                    Name: readerJobs.GetString(0),
-                    IntervalSeconds: readerJobs.GetInt32(1),
-                    NextExecution: readerJobs.GetDateTime(2).ToString("O"),
-                    LockedUntil: readerJobs.IsDBNull(3) ? null : readerJobs.GetDateTime(3).ToString("O")
-                ));
-            }
+            jobs.Add(new JobInfo(
+                Name: readerJobs.GetString(0),
+                IntervalSeconds: readerJobs.GetInt32(1),
+                NextExecution: readerJobs.GetDateTime(2).ToString("O"),
+                LockedUntil: readerJobs.IsDBNull(3) ? null : readerJobs.GetDateTime(3).ToString("O")
+            ));
         }
 
         var history = new List<JobHistoryLog>();
         await using var cmdHistory = connection.CreateCommand();
         cmdHistory.CommandText = "SELECT JobName, ExecutedAt, Status, ErrorMessage FROM JobHistory ORDER BY Id DESC LIMIT 10;";
-        await using (var readerHistory = await cmdHistory.ExecuteReaderAsync())
+        await using var readerHistory = await cmdHistory.ExecuteReaderAsync();
+        while (await readerHistory.ReadAsync())
         {
-            while (await readerHistory.ReadAsync())
-            {
-                history.Add(new JobHistoryLog(
-                    JobName: readerHistory.GetString(0),
-                    ExecutedAt: readerHistory.GetDateTime(1).ToString("O"),
-                    Status: readerHistory.GetString(2),
-                    ErrorMessage: readerHistory.IsDBNull(3) ? null : readerHistory.GetString(3)
-                ));
-            }
+            history.Add(new JobHistoryLog(
+                JobName: readerHistory.GetString(0),
+                ExecutedAt: readerHistory.GetDateTime(1).ToString("O"),
+                Status: readerHistory.GetString(2),
+                ErrorMessage: readerHistory.IsDBNull(3) ? null : readerHistory.GetString(3)
+            ));
         }
 
         var performanceGraph = new List<GraphPoint>();
@@ -235,17 +244,15 @@ public class PostgreSqlJobStorage : IJobStorage
             GROUP BY Timestamp
             ORDER BY Timestamp ASC;";
 
-        await using (var readerGraph = await cmdGraph.ExecuteReaderAsync())
+        await using var readerGraph = await cmdGraph.ExecuteReaderAsync();
+        while (await readerGraph.ReadAsync())
         {
-            while (await readerGraph.ReadAsync())
+            if (!readerGraph.IsDBNull(0))
             {
-                if (!readerGraph.IsDBNull(0))
-                {
-                    performanceGraph.Add(new GraphPoint(
-                        Timestamp: readerGraph.GetInt64(0),
-                        Executions: readerGraph.GetInt32(1)
-                    ));
-                }
+                performanceGraph.Add(new GraphPoint(
+                    Timestamp: readerGraph.GetInt64(0),
+                    Executions: readerGraph.GetInt32(1)
+                ));
             }
         }
 

@@ -23,6 +23,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Cabal.Scheduler\Cabal.Scheduler.csproj" />
     <ProjectReference Include="..\..\src\Cabal.SQLite\Cabal.SQLite.csproj" />
+    <ProjectReference Include="..\..\src\Cabal.PostgreSQL\Cabal.PostgreSQL.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.3.0" />
   </ItemGroup>
 
 </Project>
