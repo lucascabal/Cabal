@@ -1,5 +1,5 @@
 using Microsoft.Data.Sqlite;
-using FluentAssertions;
+using AwesomeAssertions;
 using Cabal.Scheduler.Core;
 using Cabal.SQLite;
 

@@ -17,7 +17,7 @@ public class PostgreSqlJobStorage : IJobStorage
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
-
+        
         await using var command = connection.CreateCommand();
         command.CommandText = @"
             CREATE TABLE IF NOT EXISTS ScheduledJobs (

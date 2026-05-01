@@ -1,7 +1,7 @@
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Builders;
-using FluentAssertions;
 using Cabal.Scheduler.Core;
+using AwesomeAssertions;
 using Cabal.PostgreSQL;
 
 namespace Cabal.Tests;
