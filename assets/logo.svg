@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="256" height="256">
+  <!-- Defs for CRT Effects -->
+  <defs>
+    <!-- CRT Screen Glow -->
+    <radialGradient id="screenGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#14FD2B" stop-opacity="0.15" />
+      <stop offset="80%" stop-color="#051a05" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#020802" stop-opacity="1" />
+    </radialGradient>
+    
+    <!-- Scanline Pattern -->
+    <pattern id="scanlines" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect width="4" height="2" fill="#000000" fill-opacity="0.6"/>
+      <rect y="2" width="4" height="2" fill="#14FD2B" fill-opacity="0.08"/>
+    </pattern>
+  </defs>
+
+  <!-- Base Monitor Frame -->
+  <rect width="512" height="512" rx="40" fill="#020802" />
+  
+  <!-- CRT Glow and Scanlines -->
+  <rect width="512" height="512" rx="40" fill="url(#screenGlow)" />
+  <rect width="512" height="512" rx="40" fill="url(#scanlines)" />
+
+  <!-- Retro Frame Details (Corners) -->
+  <path d="M 40 40 L 100 40 M 472 40 L 412 40 M 40 472 L 100 472 M 472 472 L 412 472" stroke="#14FD2B" stroke-width="6" stroke-linecap="square" fill="none" opacity="0.6"/>
+  <path d="M 40 40 L 40 100 M 472 40 L 472 100 M 40 472 L 40 412 M 472 472 L 472 412" stroke="#14FD2B" stroke-width="6" stroke-linecap="square" fill="none" opacity="0.6"/>
+
+  <!-- Radar Rings (Background) -->
+  <circle cx="256" cy="256" r="160" fill="none" stroke="#14FD2B" stroke-width="2" stroke-dasharray="10 10" opacity="0.4" />
+  <circle cx="256" cy="256" r="120" fill="none" stroke="#14FD2B" stroke-width="2" opacity="0.4" />
+  <circle cx="256" cy="256" r="80" fill="none" stroke="#14FD2B" stroke-width="2" opacity="0.3" />
+  <circle cx="256" cy="256" r="40" fill="none" stroke="#14FD2B" stroke-width="1" opacity="0.2" />
+
+  <line x1="76" y1="256" x2="436" y2="256" stroke="#14FD2B" stroke-width="1" stroke-dasharray="8 4" opacity="0.5" />
+  <line x1="256" y1="76" x2="256" y2="436" stroke="#14FD2B" stroke-width="1" stroke-dasharray="8 4" opacity="0.5" />
+
+  <!-- Main C (Cabal) Gauge Perfectly Aligned with Radar Rings -->
+  <!-- Outer C track on the r=160 ring -->
+  <path d="M 369 143 A 160 160 0 1 0 369 369" fill="none" stroke="#14FD2B" stroke-width="24" stroke-linecap="butt" opacity="0.9" />
+  
+  <!-- Inner segmented tracks on the r=120 ring -->
+  <path d="M 341 171 A 120 120 0 1 0 341 341" fill="none" stroke="#14FD2B" stroke-width="12" stroke-dasharray="4 16" opacity="0.8" />
+
+  <!-- Pip-Boy Vault-Tech Style Arrow / Radar Sweep Hand -->
+  <polygon points="256,256 320,110 335,115" fill="#14FD2B" />
+  <circle cx="256" cy="256" r="16" fill="#020802" stroke="#14FD2B" stroke-width="6" />
+
+  <!-- Glowing Blip (a scheduled job) inside the C gap -->
+  <circle cx="416" cy="256" r="10" fill="#14FD2B">
+    <animate attributeName="opacity" values="1;0.2;1" dur="1.5s" repeatCount="indefinite" />
+    <animate attributeName="r" values="10;14;10" dur="1.5s" repeatCount="indefinite" />
+  </circle>
+
+  <!-- Second Blip on the inner track -->
+  <circle cx="136" cy="256" r="8" fill="#14FD2B" opacity="0.6">
+    <animate attributeName="opacity" values="0.6;0.1;0.6" dur="2.5s" repeatCount="indefinite" />
+  </circle>
+
+</svg>

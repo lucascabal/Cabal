@@ -1,5 +1,8 @@
-# Cabal Scheduler
+<p align="center">
+  <img src="assets/logo.svg" alt="Cabal Scheduler Logo" width="200" height="200">
+</p>
 
+# Cabal Scheduler
 A lightweight background job engine for .NET 8. No Redis, no ORMs, no bloat.
 
 Sometimes you just need to run a task every few minutes and know if it crashes. Hangfire and Quartz are great tools, but they come with real setup costs — infrastructure dependencies, massive schemas, learning curves. Cabal is built for the cases where all of that is simply overkill.
