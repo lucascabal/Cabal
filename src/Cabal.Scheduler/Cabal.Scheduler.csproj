@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
 
     <IsPackable>true</IsPackable>
+    <IsTrimmable>true</IsTrimmable>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild> 
     <PackageId>Cabal.Scheduler</PackageId>
     <Version>1.0.0-beta</Version>

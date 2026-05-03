@@ -61,6 +61,6 @@ internal class DashboardMiddleware
         
         var stats = await storage.GetDashboardStatsAsync(); 
 
-        await context.Response.WriteAsync(JsonSerializer.Serialize(stats));
+        await context.Response.WriteAsync(JsonSerializer.Serialize(stats, Cabal.Scheduler.Core.CabalJsonContext.Default.DashboardStats));
     }
 }
