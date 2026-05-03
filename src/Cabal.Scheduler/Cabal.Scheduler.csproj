@@ -20,7 +20,6 @@
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageIcon>logo.svg</PackageIcon>
   </PropertyGroup>
 
   <ItemGroup>

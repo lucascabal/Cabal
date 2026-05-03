@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -12,11 +12,13 @@
     <PackageReference Include="Hangfire.Core" Version="1.8.23" />
     <PackageReference Include="Hangfire.MemoryStorage" Version="1.8.1.2" />
     <PackageReference Include="Quartz" Version="3.18.1" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="3.8.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Cabal.Scheduler\Cabal.Scheduler.csproj" />
     <ProjectReference Include="..\..\src\Cabal.SQLite\Cabal.SQLite.csproj" />
+    <ProjectReference Include="..\..\src\Cabal.PostgreSQL\Cabal.PostgreSQL.csproj" />
   </ItemGroup>
 
 </Project>

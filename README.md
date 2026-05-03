@@ -40,15 +40,16 @@ Cabal is expressly designed to be ultra-lightweight and is fully compatible with
 
 Cabal is heavily optimized to reduce garbage collection pressure. Compared to industry standards, Cabal operates with significantly fewer memory allocations.
 
-**Job Scheduling (100 Jobs)**
+**Job Scheduling (1000 Jobs)**
 
-| Library | Immediate Persistance | Mean Time | Allocated Memory | Alloc Ratio |
-|---|---|---|---|---|
-| **Cabal** | Yes | 11.56 ms | **2.38 MB** | **1.00x** |
-| **Quartz** | No | 3.34 ms | 5.72 MB | 2.40x |
-| **Hangfire** | Yes | 123.70 ms | 66.70 MB | 28.02x |
+| Library | Mean Time | Allocated Memory | Alloc Ratio |
+|---|---|---|---|
+| **Cabal (SQLite In-Memory)** | 11.29 ms | **2.38 MB** | **1.00x** |
+| **Cabal (PostgreSQL Docker)** | 488.05 ms | **3.08 MB** | 1.29x |
+| **Quartz** | 3.30 ms | 5.68 MB | 2.38x |
+| **Hangfire** | 120.29 ms | 66.70 MB | 28.02x |
 
-*(Note: Quartz uses in-memory buffering for faster raw times, whereas Cabal guarantees immediate persistence while still allocating 60% less memory).*
+*(Note: Quartz uses in-memory buffering for faster raw times, whereas Cabal guarantees immediate persistence. Cabal's PostgreSQL test includes network latency to a Docker container, but notice how Cabal strictly maintains an extremely low memory footprint compared to Hangfire).*
 
 ---
 

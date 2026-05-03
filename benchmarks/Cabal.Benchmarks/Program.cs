@@ -6,6 +6,7 @@ using Cabal.Scheduler.Core;
 using Cabal.Scheduler.Storage;
 using Cabal.Scheduler.Worker;
 using Cabal.SQLite;
+using Cabal.PostgreSQL;
 using Hangfire;
 using Hangfire.MemoryStorage;
 using Microsoft.Data.Sqlite;
@@ -13,6 +14,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Quartz;
 using Quartz.Impl;
+using DotNet.Testcontainers.Containers;
+using DotNet.Testcontainers.Builders;
 
 [MemoryDiagnoser]
 [RankColumn] 
@@ -20,20 +23,35 @@ public class SchedulerBenchmarks
 {
     private const int JobCount = 1000;
     
-    private IJobStorage _cabalStorage = null!;
+    private IJobStorage _cabalSqlite = null!;
+    private IJobStorage _cabalPostgres = null!;
     private IScheduler _quartzScheduler = null!;
     private SqliteConnection _keepAlive = null!;
+    private IContainer _postgresContainer = null!;
 
     [GlobalSetup]
     public async Task Setup()
     {
         var connectionString = "Data Source=cabal_bench;Mode=Memory;Cache=Shared";
-        
         _keepAlive = new SqliteConnection(connectionString);
         await _keepAlive.OpenAsync();
+        _cabalSqlite = new SqliteJobStorage(connectionString);
+        await _cabalSqlite.InitializeDatabaseAsync();
+
+        _postgresContainer = new ContainerBuilder()
+            .WithImage("postgres:16-alpine")
+            .WithEnvironment("POSTGRES_USER", "postgres")
+            .WithEnvironment("POSTGRES_PASSWORD", "postgres")
+            .WithEnvironment("POSTGRES_DB", "cabal_test")
+            .WithPortBinding(5432, true)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
+            .Build();
         
-        _cabalStorage = new SqliteJobStorage(connectionString);
-        await _cabalStorage.InitializeDatabaseAsync();
+        await _postgresContainer.StartAsync();
+        var port = _postgresContainer.GetMappedPublicPort(5432);
+        var pgConn = $"Host=localhost;Port={port};Username=postgres;Password=postgres;Database=cabal_test";
+        _cabalPostgres = new PostgreSqlJobStorage(pgConn);
+        await _cabalPostgres.InitializeDatabaseAsync();
 
         GlobalConfiguration.Configuration.UseMemoryStorage();
 
@@ -43,27 +61,32 @@ public class SchedulerBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup()
+    public async Task Cleanup()
     {
         _keepAlive?.Dispose();
+        await _postgresContainer.DisposeAsync();
     }
 
-    [Benchmark(Baseline = true)]
-    public async Task Cabal_SyncJobs()
+    [Benchmark]
+    public async Task Cabal_SQLite_SyncJobs()
     {
         var jobs = new List<JobDefinition>();
         for (int i = 0; i < JobCount; i++)
         {
-            var job = new JobDefinition
-            {
-                Name = $"Job_{i}",
-                Interval = TimeSpan.FromMinutes(5),
-                ActionToExecute = (_, _) => Task.CompletedTask
-            };
-            jobs.Add(job);
+            jobs.Add(new JobDefinition { Name = $"Job_{i}", Interval = TimeSpan.FromMinutes(5) });
         }
+        await _cabalSqlite.SyncJobsFromMemoryAsync(jobs);
+    }
 
-        await _cabalStorage.SyncJobsFromMemoryAsync(jobs);
+    [Benchmark]
+    public async Task Cabal_PostgreSQL_SyncJobs()
+    {
+        var jobs = new List<JobDefinition>();
+        for (int i = 0; i < JobCount; i++)
+        {
+            jobs.Add(new JobDefinition { Name = $"Job_{i}", Interval = TimeSpan.FromMinutes(5) });
+        }
+        await _cabalPostgres.SyncJobsFromMemoryAsync(jobs);
     }
 
     [Benchmark]
