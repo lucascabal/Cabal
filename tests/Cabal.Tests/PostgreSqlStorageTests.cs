@@ -79,7 +79,8 @@ public class PostgreSqlStorageTests : IAsyncLifetime
         var job = new JobDefinition { Name = "Ping", Interval = TimeSpan.FromSeconds(30) };
         await _storage!.SyncJobsFromMemoryAsync([job]);
 
-        var jobId = await _storage.GetAndLockNextJobAsync(DateTime.UtcNow.AddSeconds(31));
+        var jobs = await _storage.GetAndLockNextJobsAsync(DateTime.UtcNow.AddSeconds(31), 1);
+        var jobId = jobs.FirstOrDefault();
         jobId.Should().NotBeNull();
 
         await _storage.MarkJobAsCompletedAsync(jobId!, intervalSeconds: 30, success: true, errorMessage: null);
@@ -111,7 +112,8 @@ public class PostgreSqlStorageTests : IAsyncLifetime
         var job = new JobDefinition { Name = "Lockable Job", Interval = TimeSpan.FromSeconds(10) };
         await _storage!.SyncJobsFromMemoryAsync([job]);
 
-        var jobId = await _storage.GetAndLockNextJobAsync(DateTime.UtcNow.AddSeconds(11));
+        var jobs = await _storage.GetAndLockNextJobsAsync(DateTime.UtcNow.AddSeconds(11), 1);
+        var jobId = jobs.FirstOrDefault();
         jobId.Should().NotBeNull();
 
         var record = await _storage.GetJobByIdAsync(jobId!);
@@ -125,7 +127,8 @@ public class PostgreSqlStorageTests : IAsyncLifetime
         var job = new JobDefinition { Name = "Future Job", Interval = TimeSpan.FromHours(1) };
         await _storage!.SyncJobsFromMemoryAsync([job]);
 
-        var jobId = await _storage.GetAndLockNextJobAsync(DateTime.UtcNow);
+        var jobs = await _storage.GetAndLockNextJobsAsync(DateTime.UtcNow, 1);
+        var jobId = jobs.FirstOrDefault();
         jobId.Should().BeNull();
     }
 
@@ -135,7 +138,8 @@ public class PostgreSqlStorageTests : IAsyncLifetime
         var job = new JobDefinition { Name = "Failing Job", Interval = TimeSpan.FromSeconds(30) };
         await _storage!.SyncJobsFromMemoryAsync([job]);
 
-        var jobId = await _storage.GetAndLockNextJobAsync(DateTime.UtcNow.AddSeconds(31));
+        var jobs = await _storage.GetAndLockNextJobsAsync(DateTime.UtcNow.AddSeconds(31), 1);
+        var jobId = jobs.FirstOrDefault();
         jobId.Should().NotBeNull();
 
         await _storage.MarkJobAsCompletedAsync(jobId!, intervalSeconds: 30, success: false, errorMessage: "Something went wrong");

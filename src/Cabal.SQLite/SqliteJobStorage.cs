@@ -106,7 +106,7 @@ public class SqliteJobStorage : IJobStorage
         await transaction.CommitAsync();
     }
 
-    public async Task<string?> GetAndLockNextJobAsync(DateTime now)
+    public async Task<IReadOnlyList<string>> GetAndLockNextJobsAsync(DateTime now, int limit)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -115,20 +115,29 @@ public class SqliteJobStorage : IJobStorage
         command.CommandText = @"
             UPDATE ScheduledJobs
             SET LockedUntil = datetime(@now, '+' || LockTimeoutSeconds || ' seconds')
-            WHERE Id = (
+            WHERE Id IN (
                 SELECT Id FROM ScheduledJobs
                 WHERE NextExecution <= @now
                   AND (LockedUntil IS NULL OR LockedUntil < @now)
                 ORDER BY NextExecution ASC
-                LIMIT 1
+                LIMIT @limit
             )
             RETURNING Id;
         ";
 
         command.Parameters.AddWithValue("@now", now.ToString("O"));
+        command.Parameters.AddWithValue("@limit", limit);
 
-        var result = await command.ExecuteScalarAsync();
-        return result?.ToString();
+        var jobs = new List<string>();
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                jobs.Add(reader.GetString(0));
+            }
+        }
+        
+        return jobs;
     }
 
     public async Task<JobDefinitionRecord?> GetJobByIdAsync(string id)

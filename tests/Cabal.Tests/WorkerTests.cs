@@ -23,7 +23,9 @@ public class WorkerTests
 
         var jobDefinition = Schedule.PendingJobs.First();
 
-        mockStorage.GetAndLockNextJobAsync(Arg.Any<DateTime>()).Returns(jobDefinition.Id, (string?)null);
+        mockStorage.GetAndLockNextJobsAsync(Arg.Any<DateTime>(), Arg.Any<int>())
+            .Returns(new List<string> { jobDefinition.Id }, new List<string>());
+            
         mockStorage.GetJobByIdAsync(jobDefinition.Id).Returns(new JobDefinitionRecord(jobDefinition.Id, "Bomb task", 60));
 
         var worker = new SchedulerBackgroundService(mockStorage, logger, scopeFactory, TimeSpan.FromMilliseconds(50));
@@ -51,8 +53,9 @@ public class WorkerTests
 
         var orphanJobId = Guid.NewGuid().ToString("N");
 
-        mockStorage.GetAndLockNextJobAsync(Arg.Any<DateTime>())
-            .Returns(orphanJobId, (string?)null);
+        mockStorage.GetAndLockNextJobsAsync(Arg.Any<DateTime>(), Arg.Any<int>())
+            .Returns(new List<string> { orphanJobId }, new List<string>());
+            
         mockStorage.GetJobByIdAsync(orphanJobId)
             .Returns(new JobDefinitionRecord(orphanJobId, "Unregistered Job", 60));
 
@@ -83,8 +86,9 @@ public class WorkerTests
 
         var orphanJobId = Guid.NewGuid().ToString("N");
 
-        mockStorage.GetAndLockNextJobAsync(Arg.Any<DateTime>())
-            .Returns(orphanJobId, normalJob.Id, (string?)null);
+        mockStorage.GetAndLockNextJobsAsync(Arg.Any<DateTime>(), Arg.Any<int>())
+            .Returns(new List<string> { orphanJobId, normalJob.Id }, new List<string>());
+            
         mockStorage.GetJobByIdAsync(orphanJobId)
             .Returns(new JobDefinitionRecord(orphanJobId, "Unregistered Job", 60));
         mockStorage.GetJobByIdAsync(normalJob.Id)
@@ -102,5 +106,40 @@ public class WorkerTests
             success: true,
             errorMessage: Arg.Any<string?>()
         );
+    }
+
+    [Fact]
+    public async Task Worker_ShouldRespectConcurrencyLimits()
+    {
+        var mockStorage = Substitute.For<IJobStorage>();
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var logger = NullLogger<SchedulerBackgroundService>.Instance;
+
+        Schedule.ConsumeJobs();
+
+        var jobIds = new List<string>();
+        for (int i = 0; i < 5; i++)
+        {
+            var jobName = $"LongJob_{i}";
+            Schedule.Every(1).Minutes().WithName(jobName).Do(async (sp, ct) => await Task.Delay(200, ct));
+            var job = Schedule.PendingJobs.Last();
+            jobIds.Add(job.Id);
+            mockStorage.GetJobByIdAsync(job.Id).Returns(new JobDefinitionRecord(job.Id, jobName, 60));
+        }
+
+        mockStorage.GetAndLockNextJobsAsync(Arg.Any<DateTime>(), Arg.Any<int>())
+            .Returns(jobIds, new List<string>());
+
+        var worker = new SchedulerBackgroundService(mockStorage, logger, scopeFactory, TimeSpan.FromMilliseconds(50), maxConcurrentJobs: 2, batchSize: 5);
+
+        await worker.StartAsync(CancellationToken.None);
+        await Task.Delay(50); // Give it time to start 2 jobs, but not finish them
+
+        // At this point, only 2 jobs should have been requested via GetJobByIdAsync because concurrency is 2
+        var calls = mockStorage.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(IJobStorage.GetJobByIdAsync));
+        
+        Assert.True(calls <= 2, $"Expected max 2 concurrent calls, got {calls}");
+
+        await worker.StopAsync(CancellationToken.None);
     }
 }

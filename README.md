@@ -2,36 +2,37 @@
 
 A lightweight background job engine for .NET 8. No Redis, no ORMs, no bloat.
 
-Sometimes you just need to run a task every few minutes and know when it crashes.
-Hangfire and Quartz are great tools, but they come with real setup costs — infrastructure dependencies, large schemas, learning curves. Cabal is for the cases where all of that is too much.
+Sometimes you just need to run a task every few minutes and know if it crashes. Hangfire and Quartz are great tools, but they come with real setup costs — infrastructure dependencies, massive schemas, learning curves. Cabal is built for the cases where all of that is simply overkill.
 
 ---
 
-## Features
+## ⚡ Features
 
 - **Zero external dependencies** in the core package. The only reference is `Microsoft.AspNetCore.App`.
 - **Raw ADO.NET** against SQLite or PostgreSQL. No ORM, no reflection magic.
-- **Concurrency-safe** by default. SQLite uses WAL mode and atomic `UPDATE … RETURNING`. PostgreSQL uses `FOR UPDATE SKIP LOCKED` for native row-level locking.
-- **Retry with exponential backoff.** Configure max retries per job; failures are caught, logged and recorded to the database.
-- **Built-in dashboard** at any path you choose. No external assets, the HTML is embedded in the binary.
+- **Concurrency-safe.** SQLite uses WAL mode and atomic `UPDATE … RETURNING`. PostgreSQL uses `FOR UPDATE SKIP LOCKED` for native row-level locking.
+- **Batch Processing.** Heavily optimized for high-throughput environments. It fetches and locks multiple jobs in a single database roundtrip to drastically reduce latency.
+- **Concurrency Limits.** Protects your `ThreadPool` and database connection pools. Configure a hard limit on simultaneous background jobs (defaults to 100) backed by a `SemaphoreSlim`.
+- **Exponential Backoff.** Configure max retries per job. Failures are caught, logged, and permanently recorded in the database.
+- **Built-in Dashboard.** Mount it at any path you want. No external assets needed, the HTML is embedded directly in the binary.
 
 ---
 
-## Installation
+## 📦 Installation
 
-(soon 😉)
-```
+*(Coming soon to NuGet 😉)*
+```bash
 dotnet add package Cabal.Scheduler
 dotnet add package Cabal.SQLite
-# or
+# or if you prefer PostgreSQL
 dotnet add package Cabal.PostgreSQL
 ```
 
 ---
 
-## Quick start
+## 🚀 Quick Start
 
-### SQLite
+### Using SQLite
 
 ```csharp
 // Program.cs
@@ -52,7 +53,7 @@ Schedule.Every(5).Seconds()
 Schedule.Every(1).Days()
         .WithName("DB Backup")
         .WithRetries(3)
-        .Do(async () => await RunBackupAsync());
+        .Do(async (services, ct) => await RunBackupAsync(ct));
 
 var app = builder.Build();
 
@@ -62,7 +63,7 @@ app.UseCabalDashboard("/cabal");
 app.Run();
 ```
 
-### PostgreSQL
+### Using PostgreSQL
 
 ```csharp
 // Program.cs
@@ -88,24 +89,26 @@ app.UseCabalDashboard("/cabal");
 app.Run();
 ```
 
-> **Tip:** Use `compose.yaml` in this repo to spin up a PostgreSQL instance for local development:
+> **Tip:** Use the `compose.yaml` file in this repo to easily spin up a PostgreSQL instance for local development:
 > ```bash
 > docker compose up -d
 > ```
 
 ---
 
-## Dashboard
+## 📊 Dashboard
 
-Navigate to `/cabal` (or whatever path you configured) to see active jobs, next execution times, execution history and an RPM graph for the last hour.
+Navigate to `/cabal` (or whatever route you configured) to monitor active jobs, check next execution times, view the history, and see an RPM graph for the last hour.
+
 <p align="center">
   <img src="assets/dashboard.png" alt="Cabal dashboard" width="800">
 </p>
+
 ---
 
-## Scoped services
+## 💉 Scoped Services
 
-Each job execution gets its own DI scope, so you can safely inject scoped services like a `DbContext`:
+Every job execution automatically runs within its own Dependency Injection scope. This means you can safely resolve scoped services like an Entity Framework `DbContext`:
 
 ```csharp
 Schedule.Every(10).Minutes()
@@ -113,12 +116,12 @@ Schedule.Every(10).Minutes()
         .Do(async (services, ct) =>
         {
             var db = services.GetRequiredService<AppDbContext>();
-            // ...
+            // Your logic here...
         });
 ```
 
 ---
 
-## License
+## 📄 License
 
 MIT

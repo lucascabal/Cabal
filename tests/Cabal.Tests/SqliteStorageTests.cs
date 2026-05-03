@@ -77,7 +77,8 @@ public class SqliteStorageTests : IDisposable
         var job = new JobDefinition { Name = "Ping", Interval = TimeSpan.FromSeconds(30) };
         await _storage.SyncJobsFromMemoryAsync([job]);
 
-        var jobId = await _storage.GetAndLockNextJobAsync(DateTime.UtcNow.AddSeconds(31));
+        var jobs = await _storage.GetAndLockNextJobsAsync(DateTime.UtcNow.AddSeconds(31), 1);
+        var jobId = jobs.FirstOrDefault();
         jobId.Should().NotBeNull();
 
         await _storage.MarkJobAsCompletedAsync(jobId!, intervalSeconds: 30, success: true, errorMessage: null);

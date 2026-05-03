@@ -104,7 +104,7 @@ public class PostgreSqlJobStorage : IJobStorage
         await transaction.CommitAsync();
     }
 
-    public async Task<string?> GetAndLockNextJobAsync(DateTime now)
+    public async Task<IReadOnlyList<string>> GetAndLockNextJobsAsync(DateTime now, int limit)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -113,21 +113,30 @@ public class PostgreSqlJobStorage : IJobStorage
         command.CommandText = @"
             UPDATE ScheduledJobs
             SET LockedUntil = @now + (LockTimeoutSeconds * INTERVAL '1 second')
-            WHERE Id = (
+            WHERE Id IN (
                 SELECT Id FROM ScheduledJobs
                 WHERE NextExecution <= @now
                   AND (LockedUntil IS NULL OR LockedUntil < @now)
                 ORDER BY NextExecution ASC
                 FOR UPDATE SKIP LOCKED
-                LIMIT 1
+                LIMIT @limit
             )
             RETURNING Id;
         ";
 
         command.Parameters.AddWithValue("now", now);
+        command.Parameters.AddWithValue("limit", limit);
 
-        var result = await command.ExecuteScalarAsync();
-        return result?.ToString();
+        var jobs = new List<string>();
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                jobs.Add(reader.GetString(0));
+            }
+        }
+        
+        return jobs;
     }
 
     public async Task<JobDefinitionRecord?> GetJobByIdAsync(string id)
