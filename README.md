@@ -42,11 +42,11 @@ Cabal is heavily optimized to reduce garbage collection pressure. Compared to in
 
 **Job Scheduling (100 Jobs)**
 
-| Library | Mean Time | Allocated Memory | Alloc Ratio |
-|---|---|---|---|
-| **Cabal** | 11.56 ms | **2.38 MB** | **1.00x** |
-| **Quartz** | 3.34 ms | 5.72 MB | 2.40x |
-| **Hangfire** | 123.70 ms | 66.70 MB | 28.02x |
+| Library | Immediate Persistance | Mean Time | Allocated Memory | Alloc Ratio |
+|---|---|---|---||---|
+| **Cabal** | Yes | 11.56 ms | **2.38 MB** | **1.00x** |
+| **Quartz** | No | 3.34 ms | 5.72 MB | 2.40x |
+| **Hangfire** | Yes | 123.70 ms | 66.70 MB | 28.02x |
 
 *(Note: Quartz uses in-memory buffering for faster raw times, whereas Cabal guarantees immediate persistence while still allocating 60% less memory).*
 
