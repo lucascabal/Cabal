@@ -18,8 +18,6 @@ public class SchedulerBackgroundService : BackgroundService
     private readonly SemaphoreSlim _concurrencySemaphore;
 
     private readonly Dictionary<string, JobDefinition> _jobDelegates = [];
-    private readonly List<Task> _activeTasks = [];
-    private readonly object _lock = new();
 
     public SchedulerBackgroundService(
         IJobStorage storage,
@@ -35,7 +33,10 @@ public class SchedulerBackgroundService : BackgroundService
         _pollingInterval = pollingInterval ?? TimeSpan.FromSeconds(5);
         _batchSize = batchSize;
         _concurrencySemaphore = new SemaphoreSlim(maxConcurrentJobs, maxConcurrentJobs);
+        _maxConcurrentJobs = maxConcurrentJobs;
     }
+
+    private readonly int _maxConcurrentJobs;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -72,38 +73,32 @@ public class SchedulerBackgroundService : BackgroundService
             }
         }
 
-        Task[] tasksToAwait;
-        lock (_lock)
+        _logger.LogInformation("Cabal Scheduler: Awaiting active jobs to complete before shutdown...");
+        for (int i = 0; i < _maxConcurrentJobs; i++)
         {
-            tasksToAwait = [.. _activeTasks];
+            await _concurrencySemaphore.WaitAsync();
         }
-
-        if (tasksToAwait.Length > 0)
-        {
-            _logger.LogInformation("Cabal Scheduler: Awaiting {Count} active jobs to complete...", tasksToAwait.Length);
-            await Task.WhenAll(tasksToAwait);
-        }
+        _logger.LogInformation("Cabal Scheduler: All active jobs completed. Engine stopped.");
     }
 
     private async Task<bool> TryDispatchNextJobsBatchAsync(CancellationToken stoppingToken)
     {
-        var jobIds = await _storage.GetAndLockNextJobsAsync(DateTime.UtcNow, _batchSize);
-        if (jobIds == null || jobIds.Count == 0) return false;
+        var jobRecords = await _storage.GetAndLockNextJobsAsync(DateTime.UtcNow, _batchSize);
+        if (jobRecords == null || jobRecords.Count == 0) return false;
 
-        foreach (var jobId in jobIds)
+        foreach (var jobRecord in jobRecords)
         {
             await _concurrencySemaphore.WaitAsync(stoppingToken);
 
-            var task = Task.Run(async () =>
+            _ = Task.Run(async () =>
             {
                 try
                 {
-                    var jobRecord = await _storage.GetJobByIdAsync(jobId);
-                    if (jobRecord == null || !_jobDelegates.TryGetValue(jobRecord.Name, out var definition))
+                    if (!_jobDelegates.TryGetValue(jobRecord.Name, out var definition))
                     {
-                        _logger.LogWarning("Cabal: Job {JobId} found in storage but has no registered action. Releasing lock.", jobId);
-                        var interval = jobRecord?.IntervalSeconds ?? 0;
-                        await _storage.MarkJobAsCompletedAsync(jobId, interval, success: false, errorMessage: "No delegate registered for this job.");
+                        _logger.LogWarning("Cabal: Job {JobId} found in storage but has no registered action. Releasing lock.", jobRecord.Id);
+                        var interval = jobRecord.IntervalSeconds;
+                        await _storage.MarkJobAsCompletedAsync(jobRecord.Id, interval, success: false, errorMessage: "No delegate registered for this job.");
                         return;
                     }
 
@@ -166,7 +161,7 @@ public class SchedulerBackgroundService : BackgroundService
                             _logger.LogInformation("Cabal: [{JobName}] completed in {Ms}ms.", definition.Name, stopwatch.ElapsedMilliseconds);
                         }
 
-                        await _storage.MarkJobAsCompletedAsync(jobId, (int)definition.Interval.TotalSeconds, success, errorMessage);
+                        await _storage.MarkJobAsCompletedAsync(jobRecord.Id, (int)definition.Interval.TotalSeconds, success, errorMessage);
                     }
                 }
                 finally
@@ -174,21 +169,8 @@ public class SchedulerBackgroundService : BackgroundService
                     _concurrencySemaphore.Release();
                 }
             });
-
-            lock (_lock)
-            {
-                _activeTasks.Add(task);
-            }
-
-            _ = task.ContinueWith(t =>
-            {
-                lock (_lock)
-                {
-                    _activeTasks.Remove(t);
-                }
-            });
         }
 
-        return jobIds.Count == _batchSize;
+        return jobRecords.Count == _batchSize;
     }
 }

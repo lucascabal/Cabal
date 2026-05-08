@@ -67,22 +67,30 @@ public class PostgreSqlJobStorage : IJobStorage
         await connection.OpenAsync();
         await using var transaction = await connection.BeginTransactionAsync();
 
+        await using var batch = connection.CreateBatch();
+        batch.Transaction = transaction;
+
         foreach (var job in jobList)
         {
-            await using var upsertCmd = connection.CreateCommand();
-            upsertCmd.CommandText = @"
+            var batchCmd = batch.CreateBatchCommand();
+            batchCmd.CommandText = @"
                 INSERT INTO ScheduledJobs (Id, Name, IntervalSeconds, LockTimeoutSeconds, NextExecution)
                 VALUES (@id, @name, @interval, @lockTimeout, @nextExecution)
                 ON CONFLICT (Name) DO UPDATE SET
                     IntervalSeconds = EXCLUDED.IntervalSeconds,
                     LockTimeoutSeconds = EXCLUDED.LockTimeoutSeconds;
             ";
-            upsertCmd.Parameters.AddWithValue("id", job.Id);
-            upsertCmd.Parameters.AddWithValue("name", job.Name);
-            upsertCmd.Parameters.AddWithValue("interval", (int)job.Interval.TotalSeconds);
-            upsertCmd.Parameters.AddWithValue("lockTimeout", (int)job.LockTimeout.TotalSeconds);
-            upsertCmd.Parameters.AddWithValue("nextExecution", DateTime.UtcNow.Add(job.Interval));
-            await upsertCmd.ExecuteNonQueryAsync();
+            batchCmd.Parameters.AddWithValue("id", job.Id);
+            batchCmd.Parameters.AddWithValue("name", job.Name);
+            batchCmd.Parameters.AddWithValue("interval", (int)job.Interval.TotalSeconds);
+            batchCmd.Parameters.AddWithValue("lockTimeout", (int)job.LockTimeout.TotalSeconds);
+            batchCmd.Parameters.AddWithValue("nextExecution", DateTime.UtcNow.Add(job.Interval));
+            batch.BatchCommands.Add(batchCmd);
+        }
+
+        if (batch.BatchCommands.Count > 0)
+        {
+            await batch.ExecuteNonQueryAsync();
         }
 
         if (jobList.Count > 0)
@@ -104,7 +112,7 @@ public class PostgreSqlJobStorage : IJobStorage
         await transaction.CommitAsync();
     }
 
-    public async Task<IReadOnlyList<string>> GetAndLockNextJobsAsync(DateTime now, int limit)
+    public async Task<IReadOnlyList<JobDefinitionRecord>> GetAndLockNextJobsAsync(DateTime now, int limit)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -121,39 +129,29 @@ public class PostgreSqlJobStorage : IJobStorage
                 FOR UPDATE SKIP LOCKED
                 LIMIT @limit
             )
-            RETURNING Id;
+            RETURNING Id, Name, IntervalSeconds;
         ";
 
         command.Parameters.AddWithValue("now", now);
         command.Parameters.AddWithValue("limit", limit);
 
-        var jobs = new List<string>();
+        var jobs = new List<JobDefinitionRecord>();
         await using (var reader = await command.ExecuteReaderAsync())
         {
             while (await reader.ReadAsync())
             {
-                jobs.Add(reader.GetString(0));
+                jobs.Add(new JobDefinitionRecord(
+                    reader.GetString(0),
+                    reader.GetString(1),
+                    reader.GetInt32(2)
+                ));
             }
         }
         
         return jobs;
     }
 
-    public async Task<JobDefinitionRecord?> GetJobByIdAsync(string id)
-    {
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Name, IntervalSeconds FROM ScheduledJobs WHERE Id = @id LIMIT 1;";
-        command.Parameters.AddWithValue("id", id);
 
-        await using var reader = await command.ExecuteReaderAsync();
-        if (await reader.ReadAsync())
-        {
-            return new JobDefinitionRecord(reader.GetString(0), reader.GetString(1), reader.GetInt32(2));
-        }
-        return null;
-    }
 
     public async Task MarkJobAsCompletedAsync(string jobId, int intervalSeconds, bool success, string? errorMessage)
     {

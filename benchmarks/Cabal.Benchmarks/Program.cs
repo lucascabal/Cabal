@@ -21,13 +21,13 @@ using DotNet.Testcontainers.Builders;
 [RankColumn] 
 public class SchedulerBenchmarks
 {
-    private const int JobCount = 1000;
+    [Params(100, 1000)]
+    public int JobCount { get; set; }
     
     private IJobStorage _cabalSqlite = null!;
     private IJobStorage _cabalPostgres = null!;
     private IScheduler _quartzScheduler = null!;
     private SqliteConnection _keepAlive = null!;
-    private IContainer _postgresContainer = null!;
 
     [GlobalSetup]
     public async Task Setup()
@@ -38,18 +38,7 @@ public class SchedulerBenchmarks
         _cabalSqlite = new SqliteJobStorage(connectionString);
         await _cabalSqlite.InitializeDatabaseAsync();
 
-        _postgresContainer = new ContainerBuilder()
-            .WithImage("postgres:16-alpine")
-            .WithEnvironment("POSTGRES_USER", "postgres")
-            .WithEnvironment("POSTGRES_PASSWORD", "postgres")
-            .WithEnvironment("POSTGRES_DB", "cabal_test")
-            .WithPortBinding(5432, true)
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
-            .Build();
-        
-        await _postgresContainer.StartAsync();
-        var port = _postgresContainer.GetMappedPublicPort(5432);
-        var pgConn = $"Host=localhost;Port={port};Username=postgres;Password=postgres;Database=cabal_test";
+        var pgConn = "Host=localhost;Port=5432;Username=postgres;Password=admin;Database=postgres";
         _cabalPostgres = new PostgreSqlJobStorage(pgConn);
         await _cabalPostgres.InitializeDatabaseAsync();
 
@@ -64,7 +53,6 @@ public class SchedulerBenchmarks
     public async Task Cleanup()
     {
         _keepAlive?.Dispose();
-        await _postgresContainer.DisposeAsync();
     }
 
     [Benchmark]
@@ -133,13 +121,15 @@ public class SchedulerBenchmarks
 [RankColumn]
 public class ExecutionBenchmarks
 {
-    private const int JobCount = 1000;
+    [Params(100, 1000)]
+    public int JobCount { get; set; }
     
     private IJobStorage _cabalStorage = null!;
     private SchedulerBackgroundService _cabalWorker = null!;
     private IScheduler _quartzScheduler = null!;
     private SqliteConnection _keepAlive = null!;
     private BackgroundJobServer _hangfireServer = null!;
+    private IServiceScopeFactory _scopeFactory = null!;
     
     public static int ExecutedCabalJobs = 0;
     public static int ExecutedHangfireJobs = 0;
@@ -159,15 +149,7 @@ public class ExecutionBenchmarks
         
         var services = new ServiceCollection();
         var sp = services.BuildServiceProvider();
-        var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-
-        _cabalWorker = new SchedulerBackgroundService(
-            _cabalStorage, 
-            NullLogger<SchedulerBackgroundService>.Instance, 
-            scopeFactory, 
-            TimeSpan.FromMilliseconds(50), 
-            maxConcurrentJobs: 100, 
-            batchSize: 100);
+        _scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
 
         GlobalConfiguration.Configuration.UseMemoryStorage();
         _hangfireServer = new BackgroundJobServer(new BackgroundJobServerOptions { WorkerCount = 100 });
@@ -188,17 +170,31 @@ public class ExecutionBenchmarks
     public async Task Cabal_ExecuteJobs()
     {
         ExecutedCabalJobs = 0;
-        var jobs = new List<JobDefinition>();
         Schedule.ConsumeJobs(); // clear
         for (int i = 0; i < JobCount; i++)
         {
-            Schedule.Every(0).Seconds().WithName($"CabalJob_{i}").Do(() => Interlocked.Increment(ref ExecutedCabalJobs));
+            Schedule.Every(1).Seconds().WithName($"CabalJob_{i}").Do(() => Interlocked.Increment(ref ExecutedCabalJobs));
         }
-        var scheduledJobs = Schedule.ConsumeJobs();
-        await _cabalStorage.SyncJobsFromMemoryAsync(scheduledJobs);
-        
+
+        var worker = new SchedulerBackgroundService(
+            _cabalStorage, 
+            NullLogger<SchedulerBackgroundService>.Instance, 
+            _scopeFactory, 
+            TimeSpan.FromMilliseconds(50), 
+            maxConcurrentJobs: 100, 
+            batchSize: 100);
+
+        // worker.StartAsync will ConsumeJobs, Sync them, and set NextExecution to +1 second.
+        // We start the worker, but we need to update NextExecution so they run immediately.
         using var cts = new CancellationTokenSource();
-        var workerTask = _cabalWorker.StartAsync(cts.Token);
+        var workerTask = worker.StartAsync(cts.Token);
+        
+        // Wait briefly for the worker to initialize the DB and sync jobs
+        await Task.Delay(100);
+        
+        await using var cmd = _keepAlive.CreateCommand();
+        cmd.CommandText = "UPDATE ScheduledJobs SET NextExecution = datetime('now', '-1 day');";
+        await cmd.ExecuteNonQueryAsync();
         
         while (Volatile.Read(ref ExecutedCabalJobs) < JobCount)
         {
@@ -206,7 +202,7 @@ public class ExecutionBenchmarks
         }
         
         cts.Cancel();
-        await _cabalWorker.StopAsync(CancellationToken.None);
+        await worker.StopAsync(CancellationToken.None);
     }
 
     [Benchmark]
@@ -224,7 +220,139 @@ public class ExecutionBenchmarks
         }
     }
     
+    [Benchmark]
+    public async Task Quartz_ExecuteJobs()
+    {
+        ExecutedQuartzJobs = 0;
+        await _quartzScheduler.Clear();
+
+        for (int i = 0; i < JobCount; i++)
+        {
+            IJobDetail job = Quartz.JobBuilder.Create<DummyQuartzExecutionJob>()
+                .WithIdentity($"ExecJob_{i}", "BenchmarkExecGroup")
+                .Build();
+
+            ITrigger trigger = Quartz.TriggerBuilder.Create()
+                .WithIdentity($"ExecTrigger_{i}", "BenchmarkExecGroup")
+                .StartNow()
+                .Build();
+
+            await _quartzScheduler.ScheduleJob(job, trigger);
+        }
+
+        while (Volatile.Read(ref ExecutedQuartzJobs) < JobCount)
+        {
+            await Task.Delay(10);
+        }
+    }
+
     public static void DummyHangfireMethod()
+    {
+        Interlocked.Increment(ref ExecutedHangfireJobs);
+    }
+
+    public class DummyQuartzExecutionJob : IJob
+    {
+        public Task Execute(IJobExecutionContext context)
+        {
+            Interlocked.Increment(ref ExecutedQuartzJobs);
+            return Task.CompletedTask;
+        }
+    }
+}
+
+[MemoryDiagnoser]
+[RankColumn]
+public class FireAndForgetBenchmarks
+{
+    [Params(10000)]
+    public int JobCount { get; set; }
+    
+    private BackgroundJobServer _hangfireServer = null!;
+    private IJobStorage _cabalStorage = null!;
+    private IServiceScopeFactory _scopeFactory = null!;
+    private SqliteConnection _keepAlive = null!;
+
+    public static int ExecutedHangfireJobs = 0;
+    public static int ExecutedCabalJobs = 0;
+
+    [GlobalSetup]
+    public async Task Setup()
+    {
+        var connectionString = "Data Source=cabal_ff_bench;Mode=Memory;Cache=Shared";
+        _keepAlive = new SqliteConnection(connectionString);
+        await _keepAlive.OpenAsync();
+        
+        _cabalStorage = new SqliteJobStorage(connectionString);
+        await _cabalStorage.InitializeDatabaseAsync();
+
+        var services = new ServiceCollection();
+        var sp = services.BuildServiceProvider();
+        _scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+
+        GlobalConfiguration.Configuration.UseMemoryStorage();
+        _hangfireServer = new BackgroundJobServer(new BackgroundJobServerOptions { WorkerCount = 100 });
+    }
+
+    [GlobalCleanup]
+    public void Cleanup()
+    {
+        _hangfireServer?.Dispose();
+        _keepAlive?.Dispose();
+    }
+
+    [Benchmark(Baseline = true)]
+    public async Task Hangfire_FireAndForget()
+    {
+        ExecutedHangfireJobs = 0;
+        for (int i = 0; i < JobCount; i++)
+        {
+            BackgroundJob.Enqueue(() => DummyHangfireFFMethod());
+        }
+
+        while (Volatile.Read(ref ExecutedHangfireJobs) < JobCount)
+        {
+            await Task.Delay(10);
+        }
+    }
+
+    [Benchmark]
+    public async Task Cabal_FireAndForget_Simulated()
+    {
+        ExecutedCabalJobs = 0;
+        Schedule.ConsumeJobs(); // clear
+        for (int i = 0; i < JobCount; i++)
+        {
+            Schedule.Every(1).Seconds().WithName($"CabalJob_{i}").Do(() => Interlocked.Increment(ref ExecutedCabalJobs));
+        }
+
+        var worker = new SchedulerBackgroundService(
+            _cabalStorage, 
+            NullLogger<SchedulerBackgroundService>.Instance, 
+            _scopeFactory, 
+            TimeSpan.FromMilliseconds(10), 
+            maxConcurrentJobs: 100, 
+            batchSize: 100);
+
+        using var cts = new CancellationTokenSource();
+        var workerTask = worker.StartAsync(cts.Token);
+        
+        await Task.Delay(200); // Give worker time to initialize
+        
+        await using var cmd = _keepAlive.CreateCommand();
+        cmd.CommandText = "UPDATE ScheduledJobs SET NextExecution = datetime('now', '-1 day');";
+        await cmd.ExecuteNonQueryAsync();
+
+        while (Volatile.Read(ref ExecutedCabalJobs) < JobCount)
+        {
+            await Task.Delay(10);
+        }
+        
+        cts.Cancel();
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    public static void DummyHangfireFFMethod()
     {
         Interlocked.Increment(ref ExecutedHangfireJobs);
     }
@@ -237,5 +365,6 @@ public class Program
         Console.WriteLine("Running benchmarks...");
         BenchmarkRunner.Run<SchedulerBenchmarks>();
         BenchmarkRunner.Run<ExecutionBenchmarks>();
+        BenchmarkRunner.Run<FireAndForgetBenchmarks>();
     }
 }

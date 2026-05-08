@@ -80,7 +80,7 @@ public class PostgreSqlStorageTests : IAsyncLifetime
         await _storage!.SyncJobsFromMemoryAsync([job]);
 
         var jobs = await _storage.GetAndLockNextJobsAsync(DateTime.UtcNow.AddSeconds(31), 1);
-        var jobId = jobs.FirstOrDefault();
+        var jobId = jobs.FirstOrDefault()?.Id;
         jobId.Should().NotBeNull();
 
         await _storage.MarkJobAsCompletedAsync(jobId!, intervalSeconds: 30, success: true, errorMessage: null);
@@ -113,12 +113,10 @@ public class PostgreSqlStorageTests : IAsyncLifetime
         await _storage!.SyncJobsFromMemoryAsync([job]);
 
         var jobs = await _storage.GetAndLockNextJobsAsync(DateTime.UtcNow.AddSeconds(11), 1);
-        var jobId = jobs.FirstOrDefault();
-        jobId.Should().NotBeNull();
-
-        var record = await _storage.GetJobByIdAsync(jobId!);
+        var record = jobs.FirstOrDefault();
         record.Should().NotBeNull();
-        record!.Name.Should().Be("Lockable Job");
+        record!.Id.Should().NotBeNull();
+        record.Name.Should().Be("Lockable Job");
     }
 
     [Fact]
@@ -128,8 +126,8 @@ public class PostgreSqlStorageTests : IAsyncLifetime
         await _storage!.SyncJobsFromMemoryAsync([job]);
 
         var jobs = await _storage.GetAndLockNextJobsAsync(DateTime.UtcNow, 1);
-        var jobId = jobs.FirstOrDefault();
-        jobId.Should().BeNull();
+        var record = jobs.FirstOrDefault();
+        record.Should().BeNull();
     }
 
     [Fact]
@@ -139,7 +137,7 @@ public class PostgreSqlStorageTests : IAsyncLifetime
         await _storage!.SyncJobsFromMemoryAsync([job]);
 
         var jobs = await _storage.GetAndLockNextJobsAsync(DateTime.UtcNow.AddSeconds(31), 1);
-        var jobId = jobs.FirstOrDefault();
+        var jobId = jobs.FirstOrDefault()?.Id;
         jobId.Should().NotBeNull();
 
         await _storage.MarkJobAsCompletedAsync(jobId!, intervalSeconds: 30, success: false, errorMessage: "Something went wrong");

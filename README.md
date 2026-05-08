@@ -38,18 +38,37 @@ Cabal is expressly designed to be ultra-lightweight and is fully compatible with
 
 ## 📊 Benchmarks
 
-Cabal is heavily optimized to reduce garbage collection pressure. Compared to industry standards, Cabal operates with significantly fewer memory allocations.
+Cabal is heavily optimized to reduce garbage collection pressure. Compared to industry standards, Cabal operates with significantly fewer memory allocations, effectively eradicating `N+1` query problems and utilizing a zero-allocation task state machine.
 
-**Job Scheduling (1000 Jobs)**
+**Job Scheduling Overhead (1000 Jobs)**
 
 | Library | Mean Time | Allocated Memory | Alloc Ratio |
 |---|---|---|---|
-| **Cabal (SQLite In-Memory)** | 11.29 ms | **2.38 MB** | **1.00x** |
-| **Cabal (PostgreSQL Docker)** | 488.05 ms | **3.08 MB** | 1.29x |
-| **Quartz** | 3.30 ms | 5.68 MB | 2.38x |
-| **Hangfire** | 120.29 ms | 66.70 MB | 28.02x |
+| **Cabal (SQLite In-Memory)** | 11.75 ms | **2.46 MB** | **1.00x** |
+| **Cabal (PostgreSQL Local)** | 28.25 ms | **3.18 MB** | 1.29x |
+| **Quartz (MemoryStorage)** | 3.46 ms | 5.93 MB | 2.41x |
+| **Hangfire (MemoryStorage)** | 118.69 ms | 68.30 MB | 27.76x |
 
-*(Note: Quartz uses in-memory buffering for faster raw times, whereas Cabal guarantees immediate persistence. Cabal's PostgreSQL test includes network latency to a Docker container, but notice how Cabal strictly maintains an extremely low memory footprint compared to Hangfire).*
+*(Note: Quartz uses in-memory buffering for faster raw times, whereas Cabal guarantees immediate atomic persistence to disk. Cabal's PostgreSQL test includes network latency, but notice how Cabal strictly maintains an extremely low memory footprint compared to Hangfire).*
+
+**Job Execution & State Machine**
+
+During job dispatching, Cabal fetches jobs in batches using `RETURNING` clauses (avoiding secondary `GetJobById` lookups) and coordinates parallelism purely via `SemaphoreSlim` capacity. This allows Cabal to scale to thousands of concurrent background jobs without maintaining heavy blocking collections (`List<Task>`) or producing `ContinueWith` closure allocations, resulting in **zero-allocation** graceful shutdowns.
+
+### When to use Hangfire Instead (Fire-and-Forget Queues)
+
+Cabal is strictly a **Scheduler**. It is designed to run *recurring* background tasks reliably. Every execution involves calculating the next interval, updating the database record atomically, and writing an execution history log. 
+
+If your use case involves blasting thousands of **Fire-and-Forget** messages into a queue where you don't need recurrence or strict execution history, **Hangfire** (with memory/Redis storage) or **RabbitMQ** are much better suited tools.
+
+**Fire-and-Forget Burst (10,000 Jobs)**
+
+| Library | Scenario Type | Mean Time |
+|---|---|---|
+| **Hangfire (MemoryStorage)** | In-Memory Message Queue | **~0.38 s** |
+| **Cabal (SQLite In-Memory)** | Forced Database Transactions | ~20.96 s |
+
+*(Note: Hangfire processes this load exponentially faster because `BackgroundJob.Enqueue` acts as a pure in-memory `ConcurrentQueue` loop, while Cabal performs 10,000 atomic database roundtrips to lock, execute, and write history logs for each job).*
 
 ---
 

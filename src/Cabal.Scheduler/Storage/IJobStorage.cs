@@ -6,9 +6,7 @@ public interface IJobStorage
 {
     Task InitializeDatabaseAsync();
     Task SyncJobsFromMemoryAsync(IEnumerable<JobDefinition> jobs);
-    Task<IReadOnlyList<string>> GetAndLockNextJobsAsync(DateTime now, int limit);
-    Task<JobDefinitionRecord?> GetJobByIdAsync(string id);
+    Task<IReadOnlyList<JobDefinitionRecord>> GetAndLockNextJobsAsync(DateTime now, int limit);
     Task MarkJobAsCompletedAsync(string jobId, int intervalSeconds, bool success, string? errorMessage);
     Task<DashboardStats> GetDashboardStatsAsync();
-}
- 
+}

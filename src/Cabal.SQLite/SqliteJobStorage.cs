@@ -83,7 +83,7 @@ public class SqliteJobStorage : IJobStorage
             upsertCmd.Parameters.AddWithValue("@name", job.Name);
             upsertCmd.Parameters.AddWithValue("@interval", (int)job.Interval.TotalSeconds);
             upsertCmd.Parameters.AddWithValue("@lockTimeout", (int)job.LockTimeout.TotalSeconds);
-            upsertCmd.Parameters.AddWithValue("@nextExecution", DateTime.UtcNow.Add(job.Interval).ToString("O"));
+            upsertCmd.Parameters.AddWithValue("@nextExecution", DateTime.UtcNow.Add(job.Interval));
             await upsertCmd.ExecuteNonQueryAsync();
         }
 
@@ -106,7 +106,7 @@ public class SqliteJobStorage : IJobStorage
         await transaction.CommitAsync();
     }
 
-    public async Task<IReadOnlyList<string>> GetAndLockNextJobsAsync(DateTime now, int limit)
+    public async Task<IReadOnlyList<JobDefinitionRecord>> GetAndLockNextJobsAsync(DateTime now, int limit)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -122,39 +122,29 @@ public class SqliteJobStorage : IJobStorage
                 ORDER BY NextExecution ASC
                 LIMIT @limit
             )
-            RETURNING Id;
+            RETURNING Id, Name, IntervalSeconds;
         ";
 
-        command.Parameters.AddWithValue("@now", now.ToString("O"));
+        command.Parameters.AddWithValue("@now", now);
         command.Parameters.AddWithValue("@limit", limit);
 
-        var jobs = new List<string>();
+        var jobs = new List<JobDefinitionRecord>();
         await using (var reader = await command.ExecuteReaderAsync())
         {
             while (await reader.ReadAsync())
             {
-                jobs.Add(reader.GetString(0));
+                jobs.Add(new JobDefinitionRecord(
+                    reader.GetString(0),
+                    reader.GetString(1),
+                    reader.GetInt32(2)
+                ));
             }
         }
         
         return jobs;
     }
 
-    public async Task<JobDefinitionRecord?> GetJobByIdAsync(string id)
-    {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Name, IntervalSeconds FROM ScheduledJobs WHERE Id = @id LIMIT 1;";
-        command.Parameters.AddWithValue("@id", id);
 
-        await using var reader = await command.ExecuteReaderAsync();
-        if (await reader.ReadAsync())
-        {
-            return new JobDefinitionRecord(reader.GetString(0), reader.GetString(1), reader.GetInt32(2));
-        }
-        return null;
-    }
 
     public async Task MarkJobAsCompletedAsync(string jobId, int intervalSeconds, bool success, string? errorMessage)
     {
@@ -170,8 +160,8 @@ public class SqliteJobStorage : IJobStorage
             WHERE Id = @id;
         ";
         updateCmd.Parameters.AddWithValue("@id", jobId);
-        updateCmd.Parameters.AddWithValue("@now", now.ToString("O"));
-        updateCmd.Parameters.AddWithValue("@next", now.AddSeconds(intervalSeconds).ToString("O"));
+        updateCmd.Parameters.AddWithValue("@now", now);
+        updateCmd.Parameters.AddWithValue("@next", now.AddSeconds(intervalSeconds));
         var rowsAffected = await updateCmd.ExecuteNonQueryAsync();
 
         if (rowsAffected > 0)
@@ -183,7 +173,7 @@ public class SqliteJobStorage : IJobStorage
                 FROM ScheduledJobs WHERE Id = @id;
             ";
             historyCmd.Parameters.AddWithValue("@id", jobId);
-            historyCmd.Parameters.AddWithValue("@now", now.ToString("O"));
+            historyCmd.Parameters.AddWithValue("@now", now);
             historyCmd.Parameters.AddWithValue("@status", success ? "Success" : "Error");
             historyCmd.Parameters.AddWithValue("@error", errorMessage ?? (object)DBNull.Value);
             await historyCmd.ExecuteNonQueryAsync();
