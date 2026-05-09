@@ -138,4 +138,32 @@ public class WorkerTests
 
         await worker.StopAsync(CancellationToken.None);
     }
+
+    [Fact]
+    public async Task ProcessNextJob_WhenRunOnce_ShouldDelayIndefinitely()
+    {
+        var mockStorage = Substitute.For<IJobStorage>();
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var logger = NullLogger<SchedulerBackgroundService>.Instance;
+
+        Schedule.ConsumeJobs();
+        Schedule.Once().WithName("One-Time Task").Do(() => { });
+        var jobDefinition = Schedule.PendingJobs.First();
+
+        mockStorage.GetAndLockNextJobsAsync(Arg.Any<DateTime>(), Arg.Any<int>())
+            .Returns(new List<JobDefinitionRecord> { new JobDefinitionRecord(jobDefinition.Id, "One-Time Task", 0) }, new List<JobDefinitionRecord>());
+
+        var worker = new SchedulerBackgroundService(mockStorage, logger, scopeFactory, TimeSpan.FromMilliseconds(50));
+
+        await worker.StartAsync(CancellationToken.None);
+        await Task.Delay(100);
+        await worker.StopAsync(CancellationToken.None);
+
+        await mockStorage.Received(1).MarkJobAsCompletedAsync(
+            jobId: jobDefinition.Id,
+            intervalSeconds: int.MaxValue,
+            success: true,
+            errorMessage: Arg.Any<string?>()
+        );
+    }
 }

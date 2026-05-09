@@ -1,9 +1,9 @@
-<p align="center">
-  <img src="assets/logo.svg" alt="Cabal Scheduler Logo" width="200" height="200">
-</p>
-
-# Cabal Scheduler
-A lightweight background job engine for .NET 8. No Redis, no ORMs, no bloat.
+<div align="center">
+  <img src="assets/logo.png" alt="Cabal Scheduler Logo" width="200" height="200">
+  
+  <h1>Cabal Scheduler</h1>
+  <p><strong>A lightweight background job engine for .NET. No Redis, no ORMs, no bloat.</strong></p>
+</div>
 
 Sometimes you just need to run a task every few minutes and know if it crashes. Hangfire and Quartz are great tools, but they come with real setup costs — infrastructure dependencies, massive schemas, learning curves. Cabal is built for the cases where all of that is simply overkill.
 
@@ -54,6 +54,21 @@ Cabal is heavily optimized to reduce garbage collection pressure. Compared to in
 **Job Execution & State Machine**
 
 During job dispatching, Cabal fetches jobs in batches using `RETURNING` clauses (avoiding secondary `GetJobById` lookups) and coordinates parallelism purely via `SemaphoreSlim` capacity. This allows Cabal to scale to thousands of concurrent background jobs without maintaining heavy blocking collections (`List<Task>`) or producing `ContinueWith` closure allocations, resulting in **zero-allocation** graceful shutdowns.
+
+### ⚙️ Zero-Allocation Architecture
+
+Cabal's dispatching mechanism is built entirely around robust database locks and in-memory semaphores:
+
+```mermaid
+graph TD
+    A[Worker Polling Loop] -->|Timeout / Tick| B{Fetch Jobs}
+    B -- "UPDATE ... RETURNING" --> C[Dispatch Batch]
+    C --> D[Wait on SemaphoreSlim]
+    D --> E((Execute Delegate))
+    E --> F[Atomic Completion]
+    F --> G[Release SemaphoreSlim]
+    G -.-> D
+```
 
 ### When to use Hangfire Instead (Fire-and-Forget Queues)
 
@@ -122,6 +137,15 @@ Schedule.Every(10).Minutes()
             var db = services.GetRequiredService<AppDbContext>();
             await EmailService.ProcessQueueAsync(db, ct);
         });
+
+// Basic Fire-and-Forget (Runs exactly once on startup)
+Schedule.Once()
+        .WithName("Run Migrations")
+        .Do(async (services, ct) => 
+        {
+            var db = services.GetRequiredService<AppDbContext>();
+            await db.Database.MigrateAsync(ct);
+        });
 ```
 
 ### Step 3: Mount the Dashboard (Optional)
@@ -131,7 +155,12 @@ Cabal comes with an embedded, post-apocalyptic terminal-themed dashboard. Just p
 var app = builder.Build();
 
 // Mount the UI at /cabal
-app.UseCabalDashboard("/cabal");
+// WARNING: The dashboard exposes sensitive system data. Always secure it in production!
+app.UseCabalDashboard("/cabal", options => 
+{
+    // Example: Require a specific authorization policy
+    options.RequireAuthorization("AdminPolicy");
+});
 
 app.Run();
 ```

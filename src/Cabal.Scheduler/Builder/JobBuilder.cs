@@ -12,6 +12,8 @@ public class JobBuilder
     private int _maxRetries = 0;
     private TimeSpan _lockTimeout = TimeSpan.FromMinutes(5);
 
+    internal bool IsRunOnce { get; set; } = false;
+
     internal JobBuilder(TimeSpan interval) => _interval = interval;
 
     public JobBuilder WithName(string name)
@@ -42,6 +44,7 @@ public class JobBuilder
             Interval = _interval,
             MaxRetries = _maxRetries,
             LockTimeout = _lockTimeout,
+            RunOnce = IsRunOnce,
             ActionToExecute = action
         };
 

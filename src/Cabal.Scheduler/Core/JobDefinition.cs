@@ -7,6 +7,7 @@ public class JobDefinition
     public TimeSpan Interval { get; set; }
     public int MaxRetries { get; set; } = 0;
     public TimeSpan LockTimeout { get; set; } = TimeSpan.FromMinutes(5);
+    public bool RunOnce { get; set; } = false;
     
     public Func<IServiceProvider, CancellationToken, Task> ActionToExecute { get; set; } = (_, _) => Task.CompletedTask;
 }

@@ -41,6 +41,12 @@ public class SqliteJobStorage : IJobStorage
                 Status TEXT NOT NULL,
                 ErrorMessage TEXT NULL
             );
+
+            CREATE INDEX IF NOT EXISTS idx_next_execution 
+            ON ScheduledJobs(NextExecution, LockedUntil);
+            
+            CREATE INDEX IF NOT EXISTS idx_history_executed_at 
+            ON JobHistory(ExecutedAt DESC);
         ";
         await command.ExecuteNonQueryAsync();
 
@@ -179,11 +185,19 @@ public class SqliteJobStorage : IJobStorage
             await historyCmd.ExecuteNonQueryAsync();
         }
 
-        await using var cleanupCmd = connection.CreateCommand();
-        cleanupCmd.CommandText = "DELETE FROM JobHistory WHERE ExecutedAt < datetime('now', '-7 days');";
-        await cleanupCmd.ExecuteNonQueryAsync();
-
         await transaction.CommitAsync();
+    }
+
+    public async Task CleanupOldHistoryAsync(DateTime cutoff)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        
+        await using var cleanupCmd = connection.CreateCommand();
+        // SQLite datetime function works best with ISO 8601 strings
+        cleanupCmd.CommandText = "DELETE FROM JobHistory WHERE ExecutedAt < @cutoff;";
+        cleanupCmd.Parameters.AddWithValue("@cutoff", cutoff.ToString("yyyy-MM-dd HH:mm:ss"));
+        await cleanupCmd.ExecuteNonQueryAsync();
     }
 
     public async Task<DashboardStats> GetDashboardStatsAsync()

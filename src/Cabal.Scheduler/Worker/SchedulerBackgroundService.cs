@@ -52,6 +52,23 @@ public class SchedulerBackgroundService : BackgroundService
 
         await _storage.SyncJobsFromMemoryAsync(registeredJobs);
 
+        _ = Task.Run(async () =>
+        {
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
+                    await _storage.CleanupOldHistoryAsync(DateTime.UtcNow.AddDays(-7));
+                }
+                catch (OperationCanceledException) { break; }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Cabal: Error cleaning up history.");
+                }
+            }
+        }, stoppingToken);
+
         using var timer = new PeriodicTimer(_pollingInterval);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -158,10 +175,17 @@ public class SchedulerBackgroundService : BackgroundService
                         }
                         else
                         {
-                            _logger.LogInformation("Cabal: [{JobName}] completed in {Ms}ms.", definition.Name, stopwatch.ElapsedMilliseconds);
+                            _logger.LogDebug("Cabal: [{JobName}] completed in {Ms}ms.", definition.Name, stopwatch.ElapsedMilliseconds);
                         }
 
-                        await _storage.MarkJobAsCompletedAsync(jobRecord.Id, (int)definition.Interval.TotalSeconds, success, errorMessage);
+                        var intervalSeconds = (int)definition.Interval.TotalSeconds;
+                        if (definition.RunOnce && success)
+                        {
+                            // Delay next execution indefinitely
+                            intervalSeconds = int.MaxValue;
+                        }
+
+                        await _storage.MarkJobAsCompletedAsync(jobRecord.Id, intervalSeconds, success, errorMessage);
                     }
                 }
                 finally

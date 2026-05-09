@@ -1,0 +1,26 @@
+<Project>
+  <PropertyGroup>
+    <!-- Multi-targeting -->
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Package Metadata -->
+    <Authors>Lucas Suarez</Authors>
+    <Company>Cabal Scheduler</Company>
+    <Description>An ultra-lightweight, zero-dependency background job scheduling engine for .NET with an embedded dashboard.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/lucascabal/Cabal</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>logo.png</PackageIcon>
+    <PackageTags>scheduler;cron;background-jobs;tasks;hosted-service;cabal</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Common package files -->
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\"/>
+    <None Include="$(MSBuildThisFileDirectory)assets\logo.png" Pack="true" PackagePath="\"/>
+  </ItemGroup>
+</Project>

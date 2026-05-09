@@ -186,12 +186,18 @@ public class PostgreSqlJobStorage : IJobStorage
             await historyCmd.ExecuteNonQueryAsync();
         }
 
+        await transaction.CommitAsync();
+    }
+
+    public async Task CleanupOldHistoryAsync(DateTime cutoff)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        
         await using var cleanupCmd = connection.CreateCommand();
         cleanupCmd.CommandText = "DELETE FROM JobHistory WHERE ExecutedAt < @cutoff;";
-        cleanupCmd.Parameters.AddWithValue("cutoff", now.AddDays(-7));
+        cleanupCmd.Parameters.AddWithValue("cutoff", cutoff);
         await cleanupCmd.ExecuteNonQueryAsync();
-
-        await transaction.CommitAsync();
     }
 
     public async Task<DashboardStats> GetDashboardStatsAsync()

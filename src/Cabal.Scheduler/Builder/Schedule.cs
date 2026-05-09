@@ -13,6 +13,11 @@ public static class Schedule
         return new IntervalBuilder(value);
     }
 
+    public static JobBuilder Once()
+    {
+        return new JobBuilder(TimeSpan.Zero) { IsRunOnce = true };
+    }
+
     internal static IEnumerable<JobDefinition> ConsumeJobs()
     {
         var jobs = PendingJobs.ToArray();
