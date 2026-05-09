@@ -6,7 +6,6 @@
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild> 
     <PackageId>Cabal.Scheduler</PackageId>
-    <Version>1.0.0-beta</Version>
   </PropertyGroup>
 
   <ItemGroup>
